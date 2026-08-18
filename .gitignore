@@ -1,0 +1,31 @@
+# Dependencias
+node_modules/
+
+# Builds de la app (Vite / Electron)
+app/dist/
+app/dist-electron/
+app/release/
+*.tsbuildinfo
+
+# Página QR compilada (se regenera con npm run build:download-page)
+app/resources/download-page/
+
+# Carpeta de eventos (legado + fotos de invitados)
+eventos/
+
+# Prototipo Figma Make (la página de producción está en app/download-page/)
+Diseño pagina web/
+
+# Build Visual Studio (helper PTP)
+native/**/bin/
+native/**/obj/
+native/**/.vs/
+*.user
+*.suo
+
+# Sistema / secretos
+.DS_Store
+Thumbs.db
+.env
+.env.*
+*.log

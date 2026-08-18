@@ -1,0 +1,121 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #07080d;
+  --bg-elevated: rgba(12, 14, 22, 0.72);
+  --glass: rgba(8, 10, 18, 0.55);
+  --glass-strong: rgba(10, 12, 22, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.28);
+  --text: #f4f6fa;
+  --text-muted: rgba(244, 246, 250, 0.68);
+  --text-faint: rgba(244, 246, 250, 0.42);
+  --cta: #ffffff;
+  --cta-text: #0b0d12;
+  --neon: #ffffff;
+  --neon-dim: rgba(255, 255, 255, 0.22);
+  --neon-glow: 0 0 18px rgba(255, 255, 255, 0.45), 0 0 42px rgba(255, 255, 255, 0.22);
+  --accent-soft: rgba(255, 255, 255, 0.28);
+  --danger: rgba(255, 72, 110, 0.5);
+  --radius-lg: 28px;
+  --radius-md: 20px;
+  --radius-pill: 999px;
+  --blur: 24px;
+  --font: 'Outfit', system-ui, sans-serif;
+  --touch: 56px;
+}
+
+:root[data-theme='neon-white'] {
+  --cta: #ffffff;
+  --cta-text: #0b0d12;
+  --neon: #ffffff;
+  --neon-dim: rgba(255, 255, 255, 0.22);
+  --neon-glow: 0 0 18px rgba(255, 255, 255, 0.45), 0 0 42px rgba(255, 255, 255, 0.22);
+  --accent-soft: rgba(255, 255, 255, 0.28);
+  --glass-border: rgba(255, 255, 255, 0.32);
+}
+
+:root[data-theme='neon-cyan'] {
+  --cta: #2ef0ff;
+  --cta-text: #041018;
+  --neon: #2ef0ff;
+  --neon-dim: rgba(46, 240, 255, 0.22);
+  --neon-glow: 0 0 18px rgba(46, 240, 255, 0.55), 0 0 42px rgba(46, 240, 255, 0.28);
+  --accent-soft: rgba(46, 240, 255, 0.28);
+  --glass-border: rgba(46, 240, 255, 0.35);
+}
+
+:root[data-theme='neon-magenta'] {
+  --cta: #ff2ec8;
+  --cta-text: #1a0414;
+  --neon: #ff2ec8;
+  --neon-dim: rgba(255, 46, 200, 0.24);
+  --neon-glow: 0 0 18px rgba(255, 46, 200, 0.55), 0 0 42px rgba(255, 46, 200, 0.3);
+  --accent-soft: rgba(255, 46, 200, 0.3);
+  --glass-border: rgba(255, 46, 200, 0.38);
+}
+
+:root[data-theme='neon-lime'] {
+  --cta: #b8ff2e;
+  --cta-text: #0d1604;
+  --neon: #b8ff2e;
+  --neon-dim: rgba(184, 255, 46, 0.22);
+  --neon-glow: 0 0 18px rgba(184, 255, 46, 0.5), 0 0 42px rgba(184, 255, 46, 0.26);
+  --accent-soft: rgba(184, 255, 46, 0.28);
+  --glass-border: rgba(184, 255, 46, 0.36);
+}
+
+:root[data-theme='neon-amber'] {
+  --cta: #ffb020;
+  --cta-text: #1a1004;
+  --neon: #ffb020;
+  --neon-dim: rgba(255, 176, 32, 0.24);
+  --neon-glow: 0 0 18px rgba(255, 176, 32, 0.55), 0 0 42px rgba(255, 176, 32, 0.28);
+  --accent-soft: rgba(255, 176, 32, 0.3);
+  --glass-border: rgba(255, 176, 32, 0.38);
+}
+
+:root[data-theme='neon-violet'] {
+  --cta: #b44dff;
+  --cta-text: #10041a;
+  --neon: #b44dff;
+  --neon-dim: rgba(180, 77, 255, 0.24);
+  --neon-glow: 0 0 18px rgba(180, 77, 255, 0.55), 0 0 42px rgba(180, 77, 255, 0.3);
+  --accent-soft: rgba(180, 77, 255, 0.3);
+  --glass-border: rgba(180, 77, 255, 0.38);
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+button {
+  font: inherit;
+  border: none;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+code {
+  font-family: ui-monospace, 'Cascadia Code', monospace;
+  font-size: 0.9em;
+  opacity: 0.85;
+}

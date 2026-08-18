@@ -1,0 +1,9 @@
+{
+  "remote.autoForwardPorts": false,
+  "remote.portsAttributes": {
+    "5173": {
+      "label": "Vite (solo Electron)",
+      "onAutoForward": "ignore"
+    }
+  }
+}

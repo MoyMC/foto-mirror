@@ -1,0 +1,103 @@
+{
+  "name": "espejo-fotos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Espejo fotográfico para eventos — offline, touch-first",
+  "main": "dist-electron/main.js",
+  "author": "FotoMirror",
+  "scripts": {
+    "dev": "vite",
+    "dev:web": "VITE_WEB_ONLY=1 vite",
+    "build": "tsc -b && vite build",
+    "build:download-page": "vite build --config vite.download.config.ts",
+    "build:portable": "npm run build:download-page && npm run build && electron-builder --win portable",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --noEmit",
+    "dist": "npm run build:portable",
+    "dist:dir": "npm run build:download-page && npm run build && electron-builder --win dir"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "electron": "^35.2.1",
+    "electron-builder": "^26.0.12",
+    "png-to-ico": "^3.0.2",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.3",
+    "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "build": {
+    "appId": "mx.fotomirror.espejo",
+    "productName": "Espejo Fotos",
+    "copyright": "Copyright © FotoMirror",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "build/icon.ico",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../eventos",
+        "to": "eventos",
+        "filter": [
+          "**/*",
+          "!**/fotos/*.jpg",
+          "!**/fotos/*.jpeg",
+          "!**/fotos/*.png",
+          "!**/fotos/*.webp"
+        ]
+      },
+      {
+        "from": "resources/tether-ptp2",
+        "to": "tether-ptp2",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "resources/download-page",
+        "to": "download-page",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false
+    }
+  }
+}
