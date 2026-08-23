@@ -71,8 +71,10 @@ export function getDownloadBaseUrl(): string {
 }
 
 export async function startPhotoServer(photosDir: string): Promise<string> {
-  activePhotosDir = photosDir
+  activePhotosDir = path.join(photosDir, 'editadas')
   await fsPromises.mkdir(photosDir, { recursive: true })
+  await fsPromises.mkdir(activePhotosDir, { recursive: true })
+  await fsPromises.mkdir(path.join(photosDir, 'originales'), { recursive: true })
 
   if (server) {
     return getDownloadBaseUrl()

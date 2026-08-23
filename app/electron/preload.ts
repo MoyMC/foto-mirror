@@ -11,6 +11,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
       filePath: string
       downloadUrl: string
     }>,
+  saveEventPhotos: (input: {
+    photosDir: string
+    filename: string
+    originalDataUrl?: string
+    originalFilePath?: string
+    editedDataUrl?: string
+    reuseOriginalAsEdited: boolean
+    themeId?: string
+  }) =>
+    ipcRenderer.invoke('save-event-photos', input) as Promise<{
+      filePath: string
+      downloadUrl: string
+    }>,
   importPhotoFile: (
     sourcePath: string,
     filename: string,

@@ -88,6 +88,20 @@ ipcMain.handle('start-photo-server', async (_event, photosDir: string) => {
 
 ipcMain.handle('get-download-base-url', () => getDownloadBaseUrl())
 
+function dataUrlToBuffer(dataUrl: string): Buffer {
+  const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '')
+  return Buffer.from(base64, 'base64')
+}
+
+async function moveOrCopy(sourcePath: string, destPath: string): Promise<void> {
+  try {
+    await fs.rename(sourcePath, destPath)
+  } catch {
+    await fs.copyFile(sourcePath, destPath)
+    await fs.unlink(sourcePath).catch(() => undefined)
+  }
+}
+
 ipcMain.handle(
   'save-photo',
   async (
@@ -98,15 +112,56 @@ ipcMain.handle(
     themeId?: string,
   ) => {
     await fs.mkdir(photosDir, { recursive: true })
-
-    const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '')
-    const buffer = Buffer.from(base64, 'base64')
     const filePath = path.join(photosDir, filename)
-    await fs.writeFile(filePath, buffer)
-
+    await fs.writeFile(filePath, dataUrlToBuffer(dataUrl))
     return {
       filePath,
       downloadUrl: buildPhotoDownloadUrl(filename, themeId),
+    }
+  },
+)
+
+ipcMain.handle(
+  'save-event-photos',
+  async (
+    _event,
+    input: {
+      photosDir: string
+      filename: string
+      originalDataUrl?: string
+      originalFilePath?: string
+      editedDataUrl?: string
+      reuseOriginalAsEdited: boolean
+      themeId?: string
+    },
+  ) => {
+    const originalesDir = path.join(input.photosDir, 'originales')
+    const editadasDir = path.join(input.photosDir, 'editadas')
+    await fs.mkdir(originalesDir, { recursive: true })
+    await fs.mkdir(editadasDir, { recursive: true })
+
+    const originalPath = path.join(originalesDir, input.filename)
+    const editedPath = path.join(editadasDir, input.filename)
+
+    if (input.originalFilePath) {
+      await moveOrCopy(input.originalFilePath, originalPath)
+    } else if (input.originalDataUrl) {
+      await fs.writeFile(originalPath, dataUrlToBuffer(input.originalDataUrl))
+    } else {
+      throw new Error('Falta original (archivo o data URL)')
+    }
+
+    if (input.reuseOriginalAsEdited) {
+      await fs.copyFile(originalPath, editedPath)
+    } else if (input.editedDataUrl) {
+      await fs.writeFile(editedPath, dataUrlToBuffer(input.editedDataUrl))
+    } else {
+      throw new Error('Falta foto editada')
+    }
+
+    return {
+      filePath: editedPath,
+      downloadUrl: buildPhotoDownloadUrl(input.filename, input.themeId),
     }
   },
 )

@@ -1,18 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { applyFilterToCanvas } from '../lib/filters'
+import { hasEventSign, type EventSignFontId, type EventSignSizeId } from '../lib/eventSign'
 import type { FilterPreset } from '../types'
+import { drawNeonSign } from '../components/NeonSign'
 
 interface OverlayAssets {
   logoUrl: string | null
+  signText?: string
+  neonColor?: string
+  signX?: number
+  signY?: number
+  signFontId?: EventSignFontId
+  signSizeId?: EventSignSizeId
 }
 
 /**
  * Compone la foto a la resolución nativa del origen (no fuerza 1080p).
- * Si hay filtro distinto de "normal", lo aplica a full-res.
+ * Filtro, letrero y logo se dibujan encima del JPEG original.
  */
 export function usePhotoCompositor(
   basePhoto: string | null,
-  { logoUrl }: OverlayAssets,
+  { logoUrl, signText = '', neonColor = '#ffffff', signX, signY, signFontId, signSizeId }: OverlayAssets,
   filter?: FilterPreset | null,
   jpegQuality = 0.95,
 ) {
@@ -26,6 +34,14 @@ export function usePhotoCompositor(
     }
 
     const loadId = ++loadingRef.current
+    const needsFilter = Boolean(filter && filter.id !== 'normal')
+    const needsSign = hasEventSign(signText)
+    const needsOverlay = needsFilter || needsSign || Boolean(logoUrl)
+
+    if (!needsOverlay) {
+      setComposedPhoto(basePhoto)
+      return
+    }
 
     const loadImage = (src: string) =>
       new Promise<HTMLImageElement>((resolve, reject) => {
@@ -36,6 +52,7 @@ export function usePhotoCompositor(
       })
 
     try {
+      if (document.fonts?.ready) await document.fonts.ready
       const base = await loadImage(basePhoto)
       if (loadId !== loadingRef.current) return
 
@@ -55,12 +72,14 @@ export function usePhotoCompositor(
         return
       }
 
-      const needsFilter = Boolean(filter && filter.id !== 'normal')
-
       if (needsFilter && filter) {
         applyFilterToCanvas(ctx, base, width, height, filter)
       } else {
         ctx.drawImage(base, 0, 0, width, height)
+      }
+
+      if (needsSign) {
+        drawNeonSign(ctx, signText, width, height, neonColor, signX, signY, signFontId, signSizeId)
       }
 
       if (logoUrl) {
@@ -74,17 +93,11 @@ export function usePhotoCompositor(
         ctx.drawImage(logo, width - logoW - padding, padding, logoW, logoH)
       }
 
-      // Sin filtro ni logo: devolver el original (evita recomprimir tether)
-      if (!needsFilter && !logoUrl) {
-        setComposedPhoto(basePhoto)
-        return
-      }
-
       setComposedPhoto(canvas.toDataURL('image/jpeg', jpegQuality))
     } catch {
       setComposedPhoto(basePhoto)
     }
-  }, [basePhoto, logoUrl, filter, jpegQuality])
+  }, [basePhoto, logoUrl, signText, neonColor, signX, signY, signFontId, signSizeId, filter, jpegQuality])
 
   useEffect(() => {
     void compose()

@@ -17,6 +17,11 @@
     "dist:dir": "npm run build:download-page && npm run build && electron-builder --win dir"
   },
   "dependencies": {
+    "@fontsource/bebas-neue": "^5.3.0",
+    "@fontsource/great-vibes": "^5.3.0",
+    "@fontsource/monoton": "^5.3.0",
+    "@fontsource/outfit": "^5.3.0",
+    "@fontsource/playfair-display": "^5.3.0",
     "qrcode": "^1.5.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
