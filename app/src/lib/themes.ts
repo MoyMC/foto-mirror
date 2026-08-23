@@ -34,3 +34,7 @@ export function normalizeThemeId(value: unknown): AppThemeId {
 export function applyAppTheme(themeId: AppThemeId): void {
   document.documentElement.dataset.theme = themeId
 }
+
+export function themeNeonColor(themeId: AppThemeId): string {
+  return APP_THEMES.find((t) => t.id === themeId)?.swatch ?? '#ffffff'
+}

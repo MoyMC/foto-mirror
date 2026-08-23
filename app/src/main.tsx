@@ -1,3 +1,8 @@
+import '@fontsource/great-vibes'
+import '@fontsource/monoton'
+import '@fontsource/playfair-display/600.css'
+import '@fontsource/bebas-neue'
+import '@fontsource/outfit/600.css'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import './index.css'

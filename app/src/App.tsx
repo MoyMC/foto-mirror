@@ -6,17 +6,24 @@ import { useFilterThumbnails } from './hooks/useFilterThumbnails'
 import {
   captureModeLabel,
   loadStoredCaptureMode,
+  loadStoredEventSignFontId,
+  loadStoredEventSignSizeId,
+  loadStoredEventSignText,
+  loadStoredEventSignX,
+  loadStoredEventSignY,
   loadStoredPhotosDir,
   loadStoredPreviewRotation,
   loadStoredThemeId,
   saveSessionConfig,
   shortPath,
 } from './lib/sessionConfig'
+import { constrainEventSignInput, hasEventSign, normalizeEventSign } from './lib/eventSign'
 import { type PreviewRotation } from './lib/orientation'
-import { applyAppTheme, type AppThemeId } from './lib/themes'
+import { applyAppTheme, themeNeonColor, type AppThemeId } from './lib/themes'
 import { pickDefaultDeviceId, useCamera } from './hooks/useCamera'
 import { usePhotoCompositor } from './hooks/usePhotoCompositor'
 import { CameraPreview } from './components/CameraPreview'
+import { NeonSign } from './components/NeonSign'
 import { SetupWizard } from './components/SetupWizard'
 import { COUNTDOWN_OPTIONS, IdleScreen } from './components/IdleScreen'
 import { CountdownScreen } from './components/CountdownScreen'
@@ -28,7 +35,7 @@ import './App.css'
 const OPERATOR_UNLOCK_MS = 90_000
 
 function App() {
-  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(1)
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4 | 5>(1)
   const [setupComplete, setSetupComplete] = useState(false)
   const [photosDir, setPhotosDir] = useState<string | null>(null)
   const [captureMode, setCaptureMode] = useState<CaptureMode>('preview')
@@ -36,6 +43,11 @@ function App() {
   const [previewRotation, setPreviewRotation] = useState<PreviewRotation>(
     () => loadStoredPreviewRotation(),
   )
+  const [eventSignText, setEventSignText] = useState(() => loadStoredEventSignText())
+  const [eventSignX, setEventSignX] = useState(() => loadStoredEventSignX())
+  const [eventSignY, setEventSignY] = useState(() => loadStoredEventSignY())
+  const [eventSignFontId, setEventSignFontId] = useState(() => loadStoredEventSignFontId())
+  const [eventSignSizeId, setEventSignSizeId] = useState(() => loadStoredEventSignSizeId())
   const [tetherStatus, setTetherStatus] = useState<TetherStatus | null>(null)
   const [tetherChecking, setTetherChecking] = useState(false)
   const [testMessage, setTestMessage] = useState<string | null>(null)
@@ -88,7 +100,19 @@ function App() {
   const activeFilter = filters.find((f) => f.id === activeFilterId) ?? filters[0]
   const filterThumbnails = useFilterThumbnails(videoRef, filters, isReady, previewRotation)
 
-  const composedPhoto = usePhotoCompositor(rawPhoto, { logoUrl: null }, activeFilter)
+  const composedPhoto = usePhotoCompositor(
+    rawPhoto,
+    {
+      logoUrl: null,
+      signText: eventSignText,
+      neonColor: themeNeonColor(themeId),
+      signX: eventSignX,
+      signY: eventSignY,
+      signFontId: eventSignFontId,
+      signSizeId: eventSignSizeId,
+    },
+    activeFilter,
+  )
 
   const unlockOperator = useCallback(() => {
     setOperatorUnlocked(true)
@@ -163,6 +187,9 @@ function App() {
     setCaptureMode(loadStoredCaptureMode())
     setThemeId(loadStoredThemeId())
     setPreviewRotation(loadStoredPreviewRotation())
+    setEventSignText(loadStoredEventSignText())
+    setEventSignX(loadStoredEventSignX())
+    setEventSignY(loadStoredEventSignY())
   }, [])
 
   useEffect(() => {
@@ -192,7 +219,11 @@ function App() {
     tetherFilePath?: string
     error?: string
   }> => {
-    if (!activeFilter) return { photo: null, usedFallback: false }
+    const plainFilter = filters.find((f) => f.id === 'normal') ?? {
+      id: 'normal',
+      name: 'Normal',
+      cssFilter: 'none',
+    }
 
     if (captureMode === 'tethered' && window.electronAPI?.tetherCapture && photosDir) {
       try {
@@ -204,14 +235,14 @@ function App() {
             tetherFilePath: result.filePath,
           }
         }
-        const fallback = captureFrame(activeFilter)
+        const fallback = captureFrame(plainFilter)
         return {
           photo: fallback,
           usedFallback: true,
           error: result.error ?? 'Tether no devolvió JPEG',
         }
       } catch (err) {
-        const fallback = captureFrame(activeFilter)
+        const fallback = captureFrame(plainFilter)
         return {
           photo: fallback,
           usedFallback: true,
@@ -220,8 +251,8 @@ function App() {
       }
     }
 
-    return { photo: captureFrame(activeFilter), usedFallback: false }
-  }, [activeFilter, captureFrame, captureMode, photosDir])
+    return { photo: captureFrame(plainFilter), usedFallback: false }
+  }, [captureFrame, captureMode, filters, photosDir])
 
   useEffect(() => {
     if (!setupComplete || phase !== 'countdown') return
@@ -296,10 +327,16 @@ function App() {
         captureMode: mode,
         themeId,
         previewRotation,
+        eventSignText: normalizeEventSign(eventSignText),
+        eventSignX,
+        eventSignY,
+        eventSignFontId,
+        eventSignSizeId,
       })
     }
 
     setCaptureMode(mode)
+    setEventSignText(normalizeEventSign(eventSignText))
 
     if (window.electronAPI && photosDir) {
       await window.electronAPI.startPhotoServer(photosDir)
@@ -357,26 +394,23 @@ function App() {
   }
 
   const confirmPhoto = async () => {
-    if (!composedPhoto) return
+    if (!composedPhoto || !rawPhoto) return
 
     const filename = `foto-${Date.now()}.jpg`
-    const keepNative =
-      Boolean(tetherSourcePath) &&
-      !usedFallback &&
-      activeFilterId === 'normal' &&
-      Boolean(window.electronAPI?.importPhotoFile && photosDir)
+    const keepNative = Boolean(tetherSourcePath) && !usedFallback
+    const needsEdit = hasEventSign(eventSignText) || activeFilterId !== 'normal'
 
-    if (window.electronAPI && photosDir) {
-      const result = keepNative
-        ? await window.electronAPI.importPhotoFile(
-            tetherSourcePath!,
-            filename,
-            photosDir,
-            themeId,
-          )
-        : await window.electronAPI.savePhoto(composedPhoto, filename, photosDir, themeId)
+    if (window.electronAPI?.saveEventPhotos && photosDir) {
+      const result = await window.electronAPI.saveEventPhotos({
+        photosDir,
+        filename,
+        originalFilePath: keepNative ? tetherSourcePath! : undefined,
+        originalDataUrl: keepNative ? undefined : rawPhoto,
+        editedDataUrl: needsEdit ? composedPhoto : undefined,
+        reuseOriginalAsEdited: !needsEdit,
+        themeId,
+      })
 
-      // Si hubo DSC tether y guardamos versión con filtro, borrar el DSC suelto
       if (tetherSourcePath && !keepNative && window.electronAPI.deletePhotoFile) {
         void window.electronAPI.deletePhotoFile(tetherSourcePath)
       }
@@ -412,6 +446,41 @@ function App() {
         hidden={setupComplete && (phase === 'countdown' || phase === 'review' || phase === 'share')}
       />
 
+      {hasEventSign(eventSignText) &&
+        ((setupComplete && phase === 'idle') || (!setupComplete && wizardStep === 5)) && (
+          <>
+            {!setupComplete && wizardStep === 5 && (
+              <div
+                className="neon-sign-stage"
+                onPointerDown={(e) => {
+                  e.currentTarget.setPointerCapture(e.pointerId)
+                  const nx = (e.clientX / window.innerWidth) * 100
+                  const ny = (e.clientY / window.innerHeight) * 100
+                  setEventSignX(nx)
+                  setEventSignY(ny)
+                }}
+                onPointerMove={(e) => {
+                  if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+                  setEventSignX((e.clientX / window.innerWidth) * 100)
+                  setEventSignY((e.clientY / window.innerHeight) * 100)
+                }}
+              />
+            )}
+            <NeonSign
+              text={eventSignText}
+              x={eventSignX}
+              y={eventSignY}
+              fontId={eventSignFontId}
+              sizeId={eventSignSizeId}
+              draggable={!setupComplete}
+              onPositionChange={(x, y) => {
+                setEventSignX(x)
+                setEventSignY(y)
+              }}
+            />
+          </>
+        )}
+
       {!setupComplete && (
         <SetupWizard
           step={wizardStep}
@@ -426,6 +495,9 @@ function App() {
           captureMode={captureMode}
           themeId={themeId}
           previewRotation={previewRotation}
+          eventSignText={eventSignText}
+          eventSignFontId={eventSignFontId}
+          eventSignSizeId={eventSignSizeId}
           tetherStatus={tetherStatus}
           tetherChecking={tetherChecking}
           testMessage={testMessage}
@@ -439,10 +511,18 @@ function App() {
           onCaptureModeChange={handleCaptureModeChange}
           onThemeChange={handleThemeChange}
           onPreviewRotationChange={setPreviewRotation}
+          onEventSignChange={(text) => setEventSignText(constrainEventSignInput(text))}
+          onEventSignFontChange={setEventSignFontId}
+          onEventSignSizeChange={setEventSignSizeId}
+          onSignPreset={(x, y) => {
+            setEventSignX(x)
+            setEventSignY(y)
+          }}
+          onGoToStep={setWizardStep}
           onCheckTether={() => void refreshTetherStatus()}
           onTestCapture={() => void handleTestCapture()}
-          onBack={() => setWizardStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3 | 4) : 1))}
-          onNext={() => setWizardStep((s) => (s < 4 ? ((s + 1) as 1 | 2 | 3 | 4) : 4))}
+          onBack={() => setWizardStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3 | 4 | 5) : 1))}
+          onNext={() => setWizardStep((s) => (s < 5 ? ((s + 1) as 1 | 2 | 3 | 4 | 5) : 5))}
           onConfirm={() => void handleWizardConfirm()}
           onReconnect={reconnect}
         />

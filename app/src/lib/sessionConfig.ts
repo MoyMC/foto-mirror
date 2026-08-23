@@ -1,5 +1,13 @@
 import type { CaptureMode, SessionConfig } from '../types'
 import {
+  DEFAULT_EVENT_SIGN_X,
+  DEFAULT_EVENT_SIGN_Y,
+  clampSignPercent,
+  normalizeEventSign,
+  normalizeSignFontId,
+  normalizeSignSizeId,
+} from './eventSign'
+import {
   DEFAULT_PREVIEW_ROTATION,
   normalizePreviewRotation,
   type PreviewRotation,
@@ -16,6 +24,11 @@ export const PHOTOS_DIR_KEY = 'espejo-fotos:photos-dir'
 export const CAPTURE_MODE_KEY = 'espejo-fotos:capture-mode'
 export const THEME_KEY = 'espejo-fotos:theme-id'
 export const PREVIEW_ROTATION_KEY = 'espejo-fotos:preview-rotation'
+export const EVENT_SIGN_KEY = 'espejo-fotos:event-sign'
+export const EVENT_SIGN_X_KEY = 'espejo-fotos:event-sign-x'
+export const EVENT_SIGN_Y_KEY = 'espejo-fotos:event-sign-y'
+export const EVENT_SIGN_FONT_KEY = 'espejo-fotos:event-sign-font'
+export const EVENT_SIGN_SIZE_KEY = 'espejo-fotos:event-sign-size'
 
 function normalizeCaptureMode(value: unknown): CaptureMode {
   return value === 'tethered' ? 'tethered' : 'preview'
@@ -33,6 +46,11 @@ export function loadSessionConfig(): SessionConfig | null {
       captureMode: normalizeCaptureMode(data.captureMode),
       themeId: normalizeThemeId(data.themeId),
       previewRotation: normalizePreviewRotation(data.previewRotation),
+      eventSignText: normalizeEventSign(data.eventSignText),
+      eventSignX: clampSignPercent(data.eventSignX, DEFAULT_EVENT_SIGN_X),
+      eventSignY: clampSignPercent(data.eventSignY, DEFAULT_EVENT_SIGN_Y),
+      eventSignFontId: normalizeSignFontId(data.eventSignFontId),
+      eventSignSizeId: normalizeSignSizeId(data.eventSignSizeId),
     }
   } catch {
     return null
@@ -46,6 +64,11 @@ export function saveSessionConfig(config: SessionConfig): void {
   localStorage.setItem(CAPTURE_MODE_KEY, config.captureMode)
   localStorage.setItem(THEME_KEY, config.themeId)
   localStorage.setItem(PREVIEW_ROTATION_KEY, String(config.previewRotation))
+  localStorage.setItem(EVENT_SIGN_KEY, config.eventSignText)
+  localStorage.setItem(EVENT_SIGN_X_KEY, String(config.eventSignX))
+  localStorage.setItem(EVENT_SIGN_Y_KEY, String(config.eventSignY))
+  localStorage.setItem(EVENT_SIGN_FONT_KEY, config.eventSignFontId)
+  localStorage.setItem(EVENT_SIGN_SIZE_KEY, config.eventSignSizeId)
   applyAppTheme(config.themeId)
 }
 
@@ -65,6 +88,26 @@ export function loadStoredPreviewRotation(): PreviewRotation {
   return normalizePreviewRotation(
     localStorage.getItem(PREVIEW_ROTATION_KEY) ?? DEFAULT_PREVIEW_ROTATION,
   )
+}
+
+export function loadStoredEventSignText(): string {
+  return normalizeEventSign(localStorage.getItem(EVENT_SIGN_KEY) ?? '')
+}
+
+export function loadStoredEventSignX(): number {
+  return clampSignPercent(localStorage.getItem(EVENT_SIGN_X_KEY), DEFAULT_EVENT_SIGN_X)
+}
+
+export function loadStoredEventSignY(): number {
+  return clampSignPercent(localStorage.getItem(EVENT_SIGN_Y_KEY), DEFAULT_EVENT_SIGN_Y)
+}
+
+export function loadStoredEventSignFontId() {
+  return normalizeSignFontId(localStorage.getItem(EVENT_SIGN_FONT_KEY))
+}
+
+export function loadStoredEventSignSizeId() {
+  return normalizeSignSizeId(localStorage.getItem(EVENT_SIGN_SIZE_KEY))
 }
 
 /** Ruta corta para la barra de operador. */

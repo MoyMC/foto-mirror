@@ -1,11 +1,18 @@
 import type { CSSProperties } from 'react'
 import type { CaptureMode, PreviewRotation, TetherStatus, VideoInputDevice } from '../types'
+import {
+  EVENT_SIGN_FONTS,
+  EVENT_SIGN_MAX_CHARS,
+  EVENT_SIGN_SIZES,
+  type EventSignFontId,
+  type EventSignSizeId,
+} from '../lib/eventSign'
 import { PREVIEW_ROTATIONS } from '../lib/orientation'
 import { APP_THEMES, type AppThemeId } from '../lib/themes'
 import { CameraSelector } from './CameraSelector'
 import { FolderSelector } from './FolderSelector'
 
-type WizardStep = 1 | 2 | 3 | 4
+type WizardStep = 1 | 2 | 3 | 4 | 5
 
 interface SetupWizardProps {
   step: WizardStep
@@ -20,6 +27,9 @@ interface SetupWizardProps {
   captureMode: CaptureMode
   themeId: AppThemeId
   previewRotation: PreviewRotation
+  eventSignText: string
+  eventSignFontId: EventSignFontId
+  eventSignSizeId: EventSignSizeId
   tetherStatus: TetherStatus | null
   tetherChecking: boolean
   testMessage: string | null
@@ -30,6 +40,11 @@ interface SetupWizardProps {
   onCaptureModeChange: (mode: CaptureMode) => void
   onThemeChange: (themeId: AppThemeId) => void
   onPreviewRotationChange: (rotation: PreviewRotation) => void
+  onEventSignChange: (text: string) => void
+  onEventSignFontChange: (fontId: EventSignFontId) => void
+  onEventSignSizeChange: (sizeId: EventSignSizeId) => void
+  onSignPreset: (x: number, y: number) => void
+  onGoToStep: (step: WizardStep) => void
   onCheckTether: () => void
   onTestCapture: () => void
   onBack: () => void
@@ -51,6 +66,9 @@ export function SetupWizard({
   captureMode,
   themeId,
   previewRotation,
+  eventSignText,
+  eventSignFontId,
+  eventSignSizeId,
   tetherStatus,
   tetherChecking,
   testMessage,
@@ -61,6 +79,11 @@ export function SetupWizard({
   onCaptureModeChange,
   onThemeChange,
   onPreviewRotationChange,
+  onEventSignChange,
+  onEventSignFontChange,
+  onEventSignSizeChange,
+  onSignPreset,
+  onGoToStep,
   onCheckTether,
   onTestCapture,
   onBack,
@@ -78,31 +101,48 @@ export function SetupWizard({
   const tetherHint =
     tetherStatus?.reason ??
     (tetherChecking ? 'Conectando PTP…' : 'Pulsa Reintentar para abrir sesión PTP.')
+  const canVisit = (n: WizardStep) => {
+    if (n === 1) return true
+    if (n === 2) return canGoNext
+    return canStart
+  }
+
+  const stepClass = (n: WizardStep) => {
+    const parts = ['wizard__step']
+    if (step === n) parts.push('wizard__step--active')
+    if (canVisit(n) && step !== n) parts.push('wizard__step--ready')
+    return parts.join(' ')
+  }
 
   return (
-    <div className="wizard">
+    <div className={`wizard${step === 5 ? ' wizard--place-sign' : ''}`}>
       <div className="wizard__panel">
         <p className="wizard__eyebrow">Configuración</p>
         <h1 className="wizard__title">Preparar espejo</h1>
-        <p className="wizard__event">Carpeta, cámara, captura y color neón</p>
+        <p className="wizard__event">Carpeta, cámara, captura, color y letrero</p>
 
         <ol className="wizard__steps">
-          <li className={`wizard__step${step === 1 ? ' wizard__step--active' : ''}`}>
-            <span className="wizard__step-num">1</span>
-            <span className="wizard__step-label">Carpeta</span>
-          </li>
-          <li className={`wizard__step${step === 2 ? ' wizard__step--active' : ''}`}>
-            <span className="wizard__step-num">2</span>
-            <span className="wizard__step-label">Cámara</span>
-          </li>
-          <li className={`wizard__step${step === 3 ? ' wizard__step--active' : ''}`}>
-            <span className="wizard__step-num">3</span>
-            <span className="wizard__step-label">Captura</span>
-          </li>
-          <li className={`wizard__step${step === 4 ? ' wizard__step--active' : ''}`}>
-            <span className="wizard__step-num">4</span>
-            <span className="wizard__step-label">Color</span>
-          </li>
+          {(
+            [
+              [1, 'Carpeta'],
+              [2, 'Cámara'],
+              [3, 'Captura'],
+              [4, 'Color'],
+              [5, 'Letrero'],
+            ] as const
+          ).map(([n, label]) => (
+            <li key={n}>
+              <button
+                type="button"
+                className={stepClass(n)}
+                disabled={!canVisit(n)}
+                onClick={() => canVisit(n) && onGoToStep(n)}
+              >
+                <span className="wizard__step-num">{n}</span>
+                <span className="wizard__step-label">{label}</span>
+              </button>
+            </li>
+          ))}
         </ol>
 
         {step === 1 && (
@@ -290,6 +330,87 @@ export function SetupWizard({
               ))}
             </div>
 
+            <div className="wizard__actions">
+              <button type="button" className="btn-secondary wizard__back" onClick={onBack}>
+                Atrás
+              </button>
+              <button
+                type="button"
+                className="btn-primary wizard__confirm"
+                onClick={onNext}
+                disabled={!canStart}
+              >
+                Continuar
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === 5 && (
+          <>
+            <p className="wizard__hint wizard__hint--left">
+              Arrastra el letrero o usa un atajo. Vacío = sin letrero. Color = el neón del tema.
+            </p>
+            <textarea
+              className="wizard__sign-input"
+              rows={3}
+              maxLength={EVENT_SIGN_MAX_CHARS}
+              placeholder={'María y José'}
+              value={eventSignText}
+              onChange={(e) => onEventSignChange(e.target.value)}
+            />
+            <p className="wizard__meta">
+              {eventSignText.length}/{EVENT_SIGN_MAX_CHARS}
+            </p>
+            <div className="wizard__sign-fonts" role="radiogroup" aria-label="Fuente del letrero">
+              {EVENT_SIGN_FONTS.map((font) => (
+                <button
+                  key={font.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={eventSignFontId === font.id}
+                  className={`wizard__sign-font${
+                    eventSignFontId === font.id ? ' wizard__sign-font--active' : ''
+                  }`}
+                  style={{
+                    fontFamily: font.family,
+                    fontWeight: font.weight,
+                    letterSpacing: font.letterSpacing,
+                  }}
+                  onClick={() => onEventSignFontChange(font.id)}
+                >
+                  <span className="wizard__sign-font-sample">{font.sample}</span>
+                  <span className="wizard__sign-font-name">{font.name}</span>
+                </button>
+              ))}
+            </div>
+            <div className="wizard__sign-sizes" role="radiogroup" aria-label="Tamaño del letrero">
+              {EVENT_SIGN_SIZES.map((size) => (
+                <button
+                  key={size.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={eventSignSizeId === size.id}
+                  className={`wizard__sign-size${
+                    eventSignSizeId === size.id ? ' wizard__sign-size--active' : ''
+                  }`}
+                  onClick={() => onEventSignSizeChange(size.id)}
+                >
+                  {size.name}
+                </button>
+              ))}
+            </div>
+            <div className="wizard__sign-presets">
+              <button type="button" className="btn-secondary" onClick={() => onSignPreset(50, 16)}>
+                Arriba
+              </button>
+              <button type="button" className="btn-secondary" onClick={() => onSignPreset(50, 48)}>
+                Centro
+              </button>
+              <button type="button" className="btn-secondary" onClick={() => onSignPreset(50, 82)}>
+                Abajo
+              </button>
+            </div>
             <div className="wizard__actions">
               <button type="button" className="btn-secondary wizard__back" onClick={onBack}>
                 Atrás

@@ -1,3 +1,4 @@
+import type { EventSignFontId, EventSignSizeId } from './lib/eventSign'
 import type { AppThemeId } from './lib/themes'
 import type { PreviewRotation } from './lib/orientation'
 
@@ -14,6 +15,11 @@ export interface SessionConfig {
   captureMode: CaptureMode
   themeId: AppThemeId
   previewRotation: PreviewRotation
+  eventSignText: string
+  eventSignX: number
+  eventSignY: number
+  eventSignFontId: EventSignFontId
+  eventSignSizeId: EventSignSizeId
 }
 
 export interface TetherStatus {
@@ -75,6 +81,16 @@ export interface SavePhotoResult {
   downloadUrl: string
 }
 
+export interface SaveEventPhotosInput {
+  photosDir: string
+  filename: string
+  originalDataUrl?: string
+  originalFilePath?: string
+  editedDataUrl?: string
+  reuseOriginalAsEdited: boolean
+  themeId?: string
+}
+
 export interface ElectronAPI {
   selectPhotosDir: () => Promise<string | null>
   getEventosBaseUrl: () => Promise<string>
@@ -86,6 +102,7 @@ export interface ElectronAPI {
     photosDir: string,
     themeId?: string,
   ) => Promise<SavePhotoResult>
+  saveEventPhotos: (input: SaveEventPhotosInput) => Promise<SavePhotoResult>
   importPhotoFile: (
     sourcePath: string,
     filename: string,
