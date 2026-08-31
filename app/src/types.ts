@@ -1,8 +1,43 @@
 import type { EventSignFontId, EventSignSizeId } from './lib/eventSign'
+import type { SlideshowIdleSeconds } from './lib/slideshow'
 import type { AppThemeId } from './lib/themes'
 import type { PreviewRotation } from './lib/orientation'
 
-export type AppPhase = 'idle' | 'countdown' | 'review' | 'share'
+export type AppPhase = 'idle' | 'countdown' | 'strip-flash' | 'review' | 'share'
+
+export type PhotoMode = 'individual' | 'strip'
+
+export interface StripCaptureFrame {
+  rawPhoto: string
+  tetherSourcePath: string | null
+  usedFallback: boolean
+  fallbackReason: string | null
+}
+
+export interface StripPoseSaveInput {
+  pose: 1 | 2 | 3
+  originalDataUrl?: string
+  originalFilePath?: string
+  editedDataUrl: string
+  reuseOriginalAsEdited: boolean
+}
+
+export interface SaveStripPhotosInput {
+  photosDir: string
+  stripId: string
+  stripDataUrl: string
+  poses: StripPoseSaveInput[]
+  themeId?: string
+}
+
+export interface StripManifest {
+  type: 'strip'
+  id: string
+  files: {
+    strip: string
+    poses: [string, string, string]
+  }
+}
 
 /** Cómo se toma la foto final tras el countdown. */
 export type CaptureMode = 'preview' | 'tethered'
@@ -20,6 +55,10 @@ export interface SessionConfig {
   eventSignY: number
   eventSignFontId: EventSignFontId
   eventSignSizeId: EventSignSizeId
+  slideshowMemoriesDir: string | null
+  slideshowIncludeEventPhotos: boolean
+  slideshowIdleEnabled: boolean
+  slideshowIdleSeconds: SlideshowIdleSeconds
 }
 
 export interface TetherStatus {
@@ -93,6 +132,11 @@ export interface SaveEventPhotosInput {
 
 export interface ElectronAPI {
   selectPhotosDir: () => Promise<string | null>
+  selectSlideshowDir: () => Promise<string | null>
+  listSlideshowImages: (dir: string) => Promise<string[]>
+  listEventSlideshowImages: (photosDir: string) => Promise<string[]>
+  pathToFileUrl: (filePath: string) => Promise<string>
+  setSlideshowMemoriesDir: (dir: string | null) => Promise<void>
   getEventosBaseUrl: () => Promise<string>
   startPhotoServer: (photosDir: string) => Promise<string>
   getDownloadBaseUrl: () => Promise<string>
@@ -103,6 +147,7 @@ export interface ElectronAPI {
     themeId?: string,
   ) => Promise<SavePhotoResult>
   saveEventPhotos: (input: SaveEventPhotosInput) => Promise<SavePhotoResult>
+  saveStripPhotos: (input: SaveStripPhotosInput) => Promise<SavePhotoResult>
   importPhotoFile: (
     sourcePath: string,
     filename: string,

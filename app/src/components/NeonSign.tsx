@@ -12,6 +12,11 @@ import {
   type EventSignFontId,
   type EventSignSizeId,
 } from '../lib/eventSign'
+import {
+  DEFAULT_PREVIEW_ROTATION,
+  mapSignPreviewToPhoto,
+  type PreviewRotation,
+} from '../lib/orientation'
 
 interface NeonSignProps {
   text: string
@@ -165,6 +170,7 @@ export function drawNeonSign(
   yPercent = DEFAULT_EVENT_SIGN_Y,
   fontId: EventSignFontId = DEFAULT_EVENT_SIGN_FONT,
   sizeId: EventSignSizeId = DEFAULT_EVENT_SIGN_SIZE,
+  previewRotation: PreviewRotation = DEFAULT_PREVIEW_ROTATION,
 ): void {
   const lines = eventSignLines(text)
   if (lines.length === 0) return
@@ -184,9 +190,10 @@ export function drawNeonSign(
 
   const maxLineW = lines.reduce((widest, line) => Math.max(widest, ctx.measureText(line).width), 0)
   const blockH = Math.max(lineHeight, (lines.length - 1) * lineHeight + fontSize * 0.2)
+  const mapped = mapSignPreviewToPhoto(xPercent, yPercent, previewRotation)
   const fitted = clampSignCenter(
-    xPercent,
-    yPercent,
+    mapped.x,
+    mapped.y,
     maxLineW / 2,
     blockH / 2,
     width,

@@ -3,7 +3,9 @@ import path from 'node:path'
 import fs from 'node:fs/promises'
 import {
   buildPhotoDownloadUrl,
+  buildSlideshowImageUrl,
   getDownloadBaseUrl,
+  setSlideshowMemoriesDir,
   startPhotoServer,
   stopPhotoServer,
 } from './photoServer'
@@ -12,6 +14,7 @@ import {
   startEventsServer,
   stopEventsServer,
 } from './eventsServer'
+import { listImageFilesInDir } from './slideshowBridge'
 import { captureTethered, disconnectTether, getTetherStatus } from './tetherBridge'
 
 const isDev = !app.isPackaged
@@ -75,6 +78,34 @@ ipcMain.handle('select-photos-dir', async () => {
   })
   if (result.canceled || result.filePaths.length === 0) return null
   return result.filePaths[0]
+})
+
+ipcMain.handle('select-slideshow-dir', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Carpeta de fotos para pantalla',
+    properties: ['openDirectory', 'createDirectory'],
+  })
+  if (result.canceled || result.filePaths.length === 0) return null
+  return result.filePaths[0]
+})
+
+ipcMain.handle('list-slideshow-images', async (_event, dir: string) => {
+  if (!dir || typeof dir !== 'string') return []
+  return listImageFilesInDir(dir)
+})
+
+ipcMain.handle('list-event-slideshow-images', async (_event, photosDir: string) => {
+  if (!photosDir || typeof photosDir !== 'string') return []
+  return listImageFilesInDir(path.join(photosDir, 'editadas'))
+})
+
+ipcMain.handle('path-to-file-url', (_event, filePath: string) => {
+  if (!filePath || typeof filePath !== 'string') return ''
+  return buildSlideshowImageUrl(filePath) ?? ''
+})
+
+ipcMain.handle('set-slideshow-memories-dir', (_event, dir: string | null) => {
+  setSlideshowMemoriesDir(dir && typeof dir === 'string' ? dir : null)
 })
 
 ipcMain.handle('get-eventos-base-url', () => {
@@ -162,6 +193,80 @@ ipcMain.handle(
     return {
       filePath: editedPath,
       downloadUrl: buildPhotoDownloadUrl(input.filename, input.themeId),
+    }
+  },
+)
+
+ipcMain.handle(
+  'save-strip-photos',
+  async (
+    _event,
+    input: {
+      photosDir: string
+      stripId: string
+      stripDataUrl: string
+      poses: Array<{
+        pose: 1 | 2 | 3
+        originalDataUrl?: string
+        originalFilePath?: string
+        editedDataUrl: string
+        reuseOriginalAsEdited: boolean
+      }>
+      themeId?: string
+    },
+  ) => {
+    const originalesDir = path.join(input.photosDir, 'originales')
+    const editadasDir = path.join(input.photosDir, 'editadas')
+    await fs.mkdir(originalesDir, { recursive: true })
+    await fs.mkdir(editadasDir, { recursive: true })
+
+    const poseFilenames: [string, string, string] = [
+      `tira-${input.stripId}-1.jpg`,
+      `tira-${input.stripId}-2.jpg`,
+      `tira-${input.stripId}-3.jpg`,
+    ]
+
+    for (const poseInput of input.poses) {
+      const filename = poseFilenames[poseInput.pose - 1]
+      const originalPath = path.join(originalesDir, filename)
+      const editedPath = path.join(editadasDir, filename)
+
+      if (poseInput.originalFilePath) {
+        await moveOrCopy(poseInput.originalFilePath, originalPath)
+      } else if (poseInput.originalDataUrl) {
+        await fs.writeFile(originalPath, dataUrlToBuffer(poseInput.originalDataUrl))
+      } else {
+        throw new Error(`Falta original para pose ${poseInput.pose}`)
+      }
+
+      if (poseInput.reuseOriginalAsEdited) {
+        await fs.copyFile(originalPath, editedPath)
+      } else {
+        await fs.writeFile(editedPath, dataUrlToBuffer(poseInput.editedDataUrl))
+      }
+    }
+
+    const stripFilename = `tira-${input.stripId}-strip.jpg`
+    const stripPath = path.join(editadasDir, stripFilename)
+    await fs.writeFile(stripPath, dataUrlToBuffer(input.stripDataUrl))
+
+    const manifest = {
+      type: 'strip' as const,
+      id: input.stripId,
+      files: {
+        strip: stripFilename,
+        poses: poseFilenames,
+      },
+    }
+    await fs.writeFile(
+      path.join(editadasDir, `tira-${input.stripId}.json`),
+      JSON.stringify(manifest),
+      'utf8',
+    )
+
+    return {
+      filePath: stripPath,
+      downloadUrl: buildPhotoDownloadUrl(stripFilename, input.themeId),
     }
   },
 )

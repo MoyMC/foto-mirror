@@ -1,12 +1,14 @@
 interface CountdownScreenProps {
   countdown: number
   label: string
+  poseLabel?: string | null
 }
 
-export function CountdownScreen({ countdown, label }: CountdownScreenProps) {
+export function CountdownScreen({ countdown, label, poseLabel }: CountdownScreenProps) {
   return (
     <div className="screen screen--countdown">
       <div className="countdown__stage">
+        {poseLabel && <p className="countdown__pose">{poseLabel}</p>}
         <div className="countdown__rings" aria-hidden={countdown <= 0}>
           <span className="countdown__ring countdown__ring--outer" />
           <span className="countdown__ring countdown__ring--mid" />

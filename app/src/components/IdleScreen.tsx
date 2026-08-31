@@ -1,21 +1,49 @@
 import { useState } from 'react'
-import type { AppConfig, FilterPreset } from '../types'
+import type { AppConfig, FilterPreset, PhotoMode } from '../types'
 import { FilterBar } from './FilterBar'
 
 export const COUNTDOWN_OPTIONS = [3, 5, 7, 10] as const
 
-type RailPanel = 'filters' | 'seconds' | null
+type RailPanel = 'photo-mode' | 'filters' | 'seconds' | 'strip-0' | 'strip-1' | 'strip-2' | null
+
+const PHOTO_MODE_OPTIONS: { mode: PhotoMode; label: string }[] = [
+  { mode: 'individual', label: '1 Foto' },
+  { mode: 'strip', label: 'Tira' },
+]
 
 interface IdleScreenProps {
   config: AppConfig
   filters: FilterPreset[]
   filterThumbnails: Record<string, string>
   isReady: boolean
+  photoMode: PhotoMode
   activeFilterId: string
+  stripFilterIds: [string, string, string]
   countdownSeconds: number
+  onPhotoModeChange: (mode: PhotoMode) => void
   onFilterChange: (id: string) => void
+  onStripFilterChange: (index: 0 | 1 | 2, id: string) => void
   onCountdownChange: (seconds: number) => void
   onStart: () => void
+  onInteraction?: () => void
+}
+
+function PhotoModeIcon({ mode }: { mode: PhotoMode }) {
+  if (mode === 'strip') {
+    return (
+      <svg className="idle__rail-icon" viewBox="0 0 24 24" aria-hidden>
+        <rect x="6" y="3" width="12" height="5" rx="1.2" fill="currentColor" />
+        <rect x="6" y="9.5" width="12" height="5" rx="1.2" fill="currentColor" />
+        <rect x="6" y="16" width="12" height="5" rx="1.2" fill="currentColor" />
+      </svg>
+    )
+  }
+  return (
+    <svg className="idle__rail-icon" viewBox="0 0 24 24" aria-hidden>
+      <rect x="5" y="4" width="14" height="16" rx="2" fill="none" stroke="currentColor" strokeWidth="2" />
+      <circle cx="12" cy="11" r="3.5" fill="currentColor" />
+    </svg>
+  )
 }
 
 export function IdleScreen({
@@ -23,11 +51,16 @@ export function IdleScreen({
   filters,
   filterThumbnails,
   isReady,
+  photoMode,
   activeFilterId,
+  stripFilterIds,
   countdownSeconds,
+  onPhotoModeChange,
   onFilterChange,
+  onStripFilterChange,
   onCountdownChange,
   onStart,
+  onInteraction,
 }: IdleScreenProps) {
   const [openPanel, setOpenPanel] = useState<RailPanel>(null)
 
@@ -35,11 +68,20 @@ export function IdleScreen({
     setOpenPanel((current) => (current === panel ? null : panel))
   }
 
+  const photoModeLabel = photoMode === 'individual' ? '1 Foto' : 'Tira'
+
+  const stripPanelIndex =
+    openPanel === 'strip-0' ? 0 : openPanel === 'strip-1' ? 1 : openPanel === 'strip-2' ? 2 : null
+
   return (
-    <div className="screen screen--idle">
+    <div className="screen screen--idle" onPointerDown={onInteraction}>
       <div className="screen__overlay" />
       <div className="idle__hero">
-        <p className="idle__sub">Posa frente al espejo y captura el momento</p>
+        <p className="idle__sub">
+          {photoMode === 'strip'
+            ? 'Modo tira: 3 poses con el mismo countdown'
+            : 'Posa frente al espejo y captura el momento'}
+        </p>
       </div>
 
       <aside className="idle__rail" aria-label="Opciones">
@@ -48,6 +90,26 @@ export function IdleScreen({
           data-panel={openPanel ?? undefined}
         >
           <div className="idle__flyout-inner">
+            {openPanel === 'photo-mode' && (
+              <div className="idle__photo-mode" role="listbox" aria-label="Tipo de foto">
+                {PHOTO_MODE_OPTIONS.map(({ mode, label }) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="option"
+                    aria-selected={photoMode === mode}
+                    className={`idle__photo-mode-option${photoMode === mode ? ' idle__photo-mode-option--active' : ''}`}
+                    onClick={() => {
+                      onPhotoModeChange(mode)
+                      setOpenPanel(null)
+                    }}
+                  >
+                    <PhotoModeIcon mode={mode} />
+                    <span className="idle__photo-mode-label">{label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             {openPanel === 'filters' && (
               <FilterBar
                 filters={filters}
@@ -56,6 +118,18 @@ export function IdleScreen({
                 orientation="vertical"
                 onFilterChange={(id) => {
                   onFilterChange(id)
+                  setOpenPanel(null)
+                }}
+              />
+            )}
+            {stripPanelIndex !== null && (
+              <FilterBar
+                filters={filters}
+                activeFilterId={stripFilterIds[stripPanelIndex]}
+                thumbnails={filterThumbnails}
+                orientation="vertical"
+                onFilterChange={(id) => {
+                  onStripFilterChange(stripPanelIndex, id)
                   setOpenPanel(null)
                 }}
               />
@@ -86,19 +160,50 @@ export function IdleScreen({
         <div className="idle__rail-btns">
           <button
             type="button"
-            className={`idle__rail-btn${openPanel === 'filters' ? ' idle__rail-btn--active' : ''}`}
-            aria-expanded={openPanel === 'filters'}
-            aria-label="Filtros"
-            onClick={() => togglePanel('filters')}
+            className={`idle__rail-btn${openPanel === 'photo-mode' ? ' idle__rail-btn--active' : ''}`}
+            aria-expanded={openPanel === 'photo-mode'}
+            aria-label={`Tipo de foto: ${photoModeLabel}`}
+            onClick={() => togglePanel('photo-mode')}
           >
-            <svg className="idle__rail-icon" viewBox="0 0 24 24" aria-hidden>
-              <path
-                fill="currentColor"
-                d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v1.17a2 2 0 0 1-.586 1.414l-4.828 4.828A2 2 0 0 0 14 14.328V18a1 1 0 0 1-.553.894l-3 1.5A1 1 0 0 1 9 19.5v-5.172a2 2 0 0 0-.586-1.414L3.586 8.086A2 2 0 0 1 3 6.672V5.5Z"
-              />
-            </svg>
-            <span className="idle__rail-label">Filtros</span>
+            <PhotoModeIcon mode={photoMode} />
+            <span className="idle__rail-label">{photoModeLabel}</span>
           </button>
+
+          {photoMode === 'individual' ? (
+            <button
+              type="button"
+              className={`idle__rail-btn${openPanel === 'filters' ? ' idle__rail-btn--active' : ''}`}
+              aria-expanded={openPanel === 'filters'}
+              aria-label="Filtros"
+              onClick={() => togglePanel('filters')}
+            >
+              <svg className="idle__rail-icon" viewBox="0 0 24 24" aria-hidden>
+                <path
+                  fill="currentColor"
+                  d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v1.17a2 2 0 0 1-.586 1.414l-4.828 4.828A2 2 0 0 0 14 14.328V18a1 1 0 0 1-.553.894l-3 1.5A1 1 0 0 1 9 19.5v-5.172a2 2 0 0 0-.586-1.414L3.586 8.086A2 2 0 0 1 3 6.672V5.5Z"
+                />
+              </svg>
+              <span className="idle__rail-label">Filtros</span>
+            </button>
+          ) : (
+            ([0, 1, 2] as const).map((index) => {
+              const panel = `strip-${index}` as const
+              const isOpen = openPanel === panel
+              return (
+                <button
+                  key={panel}
+                  type="button"
+                  className={`idle__rail-btn${isOpen ? ' idle__rail-btn--active' : ''}`}
+                  aria-expanded={isOpen}
+                  aria-label={`Filtro foto ${index + 1}`}
+                  onClick={() => togglePanel(panel)}
+                >
+                  <span className="idle__rail-seconds">{index + 1}</span>
+                  <span className="idle__rail-label">Filtro</span>
+                </button>
+              )
+            })
+          )}
 
           <button
             type="button"

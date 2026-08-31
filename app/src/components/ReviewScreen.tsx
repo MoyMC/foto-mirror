@@ -3,6 +3,7 @@ import type { AppConfig } from '../types'
 interface ReviewScreenProps {
   photo: string
   config: AppConfig
+  variant?: 'individual' | 'strip'
   captureSource?: 'tether' | 'preview' | null
   fallbackReason?: string | null
   onRetake: () => void
@@ -12,6 +13,7 @@ interface ReviewScreenProps {
 export function ReviewScreen({
   photo,
   config,
+  variant = 'individual',
   captureSource,
   fallbackReason,
   onRetake,
@@ -34,7 +36,11 @@ export function ReviewScreen({
             : null}
         </p>
       )}
-      <img src={photo} alt="Tu foto" className="review__photo" />
+      <img
+        src={photo}
+        alt={variant === 'strip' ? 'Tu tira de fotos' : 'Tu foto'}
+        className={`review__photo${variant === 'strip' ? ' review__photo--strip' : ''}`}
+      />
       <div className="review__actions">
         <button type="button" className="btn-primary" onClick={onConfirm}>
           {config.texts.reviewConfirm}

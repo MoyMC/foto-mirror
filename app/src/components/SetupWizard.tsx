@@ -11,6 +11,7 @@ import { PREVIEW_ROTATIONS } from '../lib/orientation'
 import { APP_THEMES, type AppThemeId } from '../lib/themes'
 import { CameraSelector } from './CameraSelector'
 import { FolderSelector } from './FolderSelector'
+import { SlideshowSetup } from './SlideshowSetup'
 
 type WizardStep = 1 | 2 | 3 | 4 | 5
 
@@ -30,11 +31,19 @@ interface SetupWizardProps {
   eventSignText: string
   eventSignFontId: EventSignFontId
   eventSignSizeId: EventSignSizeId
+  slideshowMemoriesDir: string | null
+  slideshowIncludeEventPhotos: boolean
+  slideshowIdleEnabled: boolean
+  slideshowIdleSeconds: number
   tetherStatus: TetherStatus | null
   tetherChecking: boolean
   testMessage: string | null
   testBusy: boolean
   onPickFolder: () => void
+  onPickSlideshowDir: () => void
+  onSlideshowIdleEnabledChange: (value: boolean) => void
+  onSlideshowIncludeEventChange: (value: boolean) => void
+  onSlideshowIdleSecondsChange: (seconds: number) => void
   onCameraSelect: (deviceId: string) => void
   onCameraRefresh: () => void
   onCaptureModeChange: (mode: CaptureMode) => void
@@ -69,11 +78,19 @@ export function SetupWizard({
   eventSignText,
   eventSignFontId,
   eventSignSizeId,
+  slideshowMemoriesDir,
+  slideshowIncludeEventPhotos,
+  slideshowIdleEnabled,
+  slideshowIdleSeconds,
   tetherStatus,
   tetherChecking,
   testMessage,
   testBusy,
   onPickFolder,
+  onPickSlideshowDir,
+  onSlideshowIdleEnabledChange,
+  onSlideshowIncludeEventChange,
+  onSlideshowIdleSecondsChange,
   onCameraSelect,
   onCameraRefresh,
   onCaptureModeChange,
@@ -151,6 +168,18 @@ export function SetupWizard({
               photosDir={photosDir}
               electronAvailable={electronAvailable}
               onSelect={onPickFolder}
+              label="Carpeta para guardar fotos"
+            />
+            <SlideshowSetup
+              idleEnabled={slideshowIdleEnabled}
+              memoriesDir={slideshowMemoriesDir}
+              includeEventPhotos={slideshowIncludeEventPhotos}
+              idleSeconds={slideshowIdleSeconds}
+              electronAvailable={electronAvailable}
+              onIdleEnabledChange={onSlideshowIdleEnabledChange}
+              onPickMemoriesDir={onPickSlideshowDir}
+              onIncludeEventPhotosChange={onSlideshowIncludeEventChange}
+              onIdleSecondsChange={onSlideshowIdleSecondsChange}
             />
             <div className="wizard__actions">
               <button
