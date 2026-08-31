@@ -17,6 +17,10 @@ import {
   normalizeThemeId,
   type AppThemeId,
 } from './themes'
+import {
+  DEFAULT_SLIDESHOW_IDLE_SECONDS,
+  normalizeSlideshowIdleSeconds,
+} from './slideshow'
 
 const SESSION_KEY = 'espejo-fotos:session'
 export const CAMERA_DEVICE_KEY = 'espejo-fotos:camera-device-id'
@@ -29,6 +33,10 @@ export const EVENT_SIGN_X_KEY = 'espejo-fotos:event-sign-x'
 export const EVENT_SIGN_Y_KEY = 'espejo-fotos:event-sign-y'
 export const EVENT_SIGN_FONT_KEY = 'espejo-fotos:event-sign-font'
 export const EVENT_SIGN_SIZE_KEY = 'espejo-fotos:event-sign-size'
+export const SLIDESHOW_MEMORIES_DIR_KEY = 'espejo-fotos:slideshow-memories-dir'
+export const SLIDESHOW_INCLUDE_EVENT_KEY = 'espejo-fotos:slideshow-include-event'
+export const SLIDESHOW_IDLE_ENABLED_KEY = 'espejo-fotos:slideshow-idle-enabled'
+export const SLIDESHOW_IDLE_SECONDS_KEY = 'espejo-fotos:slideshow-idle-seconds'
 
 function normalizeCaptureMode(value: unknown): CaptureMode {
   return value === 'tethered' ? 'tethered' : 'preview'
@@ -51,6 +59,10 @@ export function loadSessionConfig(): SessionConfig | null {
       eventSignY: clampSignPercent(data.eventSignY, DEFAULT_EVENT_SIGN_Y),
       eventSignFontId: normalizeSignFontId(data.eventSignFontId),
       eventSignSizeId: normalizeSignSizeId(data.eventSignSizeId),
+      slideshowMemoriesDir: data.slideshowMemoriesDir ?? null,
+      slideshowIncludeEventPhotos: Boolean(data.slideshowIncludeEventPhotos),
+      slideshowIdleEnabled: data.slideshowIdleEnabled !== false,
+      slideshowIdleSeconds: normalizeSlideshowIdleSeconds(data.slideshowIdleSeconds),
     }
   } catch {
     return null
@@ -69,6 +81,16 @@ export function saveSessionConfig(config: SessionConfig): void {
   localStorage.setItem(EVENT_SIGN_Y_KEY, String(config.eventSignY))
   localStorage.setItem(EVENT_SIGN_FONT_KEY, config.eventSignFontId)
   localStorage.setItem(EVENT_SIGN_SIZE_KEY, config.eventSignSizeId)
+  localStorage.setItem(SLIDESHOW_MEMORIES_DIR_KEY, config.slideshowMemoriesDir ?? '')
+  localStorage.setItem(
+    SLIDESHOW_INCLUDE_EVENT_KEY,
+    config.slideshowIncludeEventPhotos ? '1' : '0',
+  )
+  localStorage.setItem(
+    SLIDESHOW_IDLE_ENABLED_KEY,
+    config.slideshowIdleEnabled ? '1' : '0',
+  )
+  localStorage.setItem(SLIDESHOW_IDLE_SECONDS_KEY, String(config.slideshowIdleSeconds))
   applyAppTheme(config.themeId)
 }
 
@@ -108,6 +130,27 @@ export function loadStoredEventSignFontId() {
 
 export function loadStoredEventSignSizeId() {
   return normalizeSignSizeId(localStorage.getItem(EVENT_SIGN_SIZE_KEY))
+}
+
+export function loadStoredSlideshowMemoriesDir(): string | null {
+  const raw = localStorage.getItem(SLIDESHOW_MEMORIES_DIR_KEY)
+  return raw || null
+}
+
+export function loadStoredSlideshowIncludeEventPhotos(): boolean {
+  return localStorage.getItem(SLIDESHOW_INCLUDE_EVENT_KEY) === '1'
+}
+
+export function loadStoredSlideshowIdleEnabled(): boolean {
+  const raw = localStorage.getItem(SLIDESHOW_IDLE_ENABLED_KEY)
+  if (raw === null) return true
+  return raw === '1'
+}
+
+export function loadStoredSlideshowIdleSeconds() {
+  return normalizeSlideshowIdleSeconds(
+    localStorage.getItem(SLIDESHOW_IDLE_SECONDS_KEY) ?? DEFAULT_SLIDESHOW_IDLE_SECONDS,
+  )
 }
 
 /** Ruta corta para la barra de operador. */

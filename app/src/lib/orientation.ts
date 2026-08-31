@@ -31,6 +31,38 @@ export function captureRotationFromPreview(preview: PreviewRotation): PreviewRot
   return preview
 }
 
+function rotateNormalized(u: number, v: number, degrees: number): [number, number] {
+  const rad = (degrees * Math.PI) / 180
+  const cx = u - 0.5
+  const cy = v - 0.5
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  return [cos * cx - sin * cy + 0.5, sin * cx + cos * cy + 0.5]
+}
+
+function mirrorNormalized(u: number, v: number): [number, number] {
+  return [1 - u, v]
+}
+
+/**
+ * El letrero se coloca en coords. de pantalla sobre el preview (espejo + rotación).
+ * La foto guardada usa captureRotationFromPreview sin espejo.
+ */
+export function mapSignPreviewToPhoto(
+  sx: number,
+  sy: number,
+  previewRotation: PreviewRotation,
+): { x: number; y: number } {
+  const [mx, my] = rotateNormalized(sx / 100, sy / 100, -previewRotation)
+  const [u, v] = mirrorNormalized(mx, my)
+  const captureRotation = captureRotationFromPreview(previewRotation)
+  const [px, py] = rotateNormalized(u, v, captureRotation)
+  return {
+    x: Math.round(px * 1000) / 10,
+    y: Math.round(py * 1000) / 10,
+  }
+}
+
 /** CSS transform: espejo + rotación. Con 90/270 el video se centra con translate. */
 export function previewCssTransform(rotation: PreviewRotation): string {
   const swap = rotation === 90 || rotation === 270

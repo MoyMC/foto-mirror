@@ -8,6 +8,7 @@ const PORT = 8787
 
 let server: http.Server | null = null
 let activePhotosDir: string | null = null
+let slideshowMemoriesDir: string | null = null
 
 function getLocalIp(): string {
   for (const iface of Object.values(networkInterfaces())) {
@@ -29,6 +30,7 @@ function contentType(filePath: string): string {
     '.jpg': 'image/jpeg',
     '.jpeg': 'image/jpeg',
     '.webp': 'image/webp',
+    '.json': 'application/json; charset=utf-8',
     '.ico': 'image/x-icon',
     '.woff': 'font/woff',
     '.woff2': 'font/woff2',
@@ -68,6 +70,41 @@ async function sendFile(res: http.ServerResponse, filePath: string, status = 200
 
 export function getDownloadBaseUrl(): string {
   return `http://${getLocalIp()}:${PORT}`
+}
+
+/** URL HTTP para el renderer (misma máquina; evita bloqueo de file://). */
+export function getLocalPhotoServerBaseUrl(): string {
+  return `http://127.0.0.1:${PORT}`
+}
+
+export function setSlideshowMemoriesDir(dir: string | null): void {
+  slideshowMemoriesDir = dir ? path.normalize(dir) : null
+}
+
+export function buildSlideshowImageUrl(filePath: string): string | null {
+  if (!filePath) return null
+  const normalized = path.normalize(filePath)
+  const base = getLocalPhotoServerBaseUrl()
+
+  if (slideshowMemoriesDir) {
+    const root = path.normalize(slideshowMemoriesDir)
+    if (normalized.startsWith(root)) {
+      const filename = path.basename(normalized)
+      if (!isSafeFilename(filename)) return null
+      return `${base}/slideshow/${encodeURIComponent(filename)}`
+    }
+  }
+
+  if (activePhotosDir) {
+    const root = path.normalize(activePhotosDir)
+    if (normalized.startsWith(root)) {
+      const filename = path.basename(normalized)
+      if (!isSafeFilename(filename)) return null
+      return `${base}/fotos/${encodeURIComponent(filename)}`
+    }
+  }
+
+  return null
 }
 
 export async function startPhotoServer(photosDir: string): Promise<string> {
@@ -132,7 +169,7 @@ export async function startPhotoServer(photosDir: string): Promise<string> {
           res.end('Server not ready')
           return
         }
-        const filename = fotoMatch[1]
+        const filename = decodeURIComponent(fotoMatch[1])
         if (!isSafeFilename(filename)) {
           res.writeHead(400)
           res.end('Bad request')
@@ -140,6 +177,30 @@ export async function startPhotoServer(photosDir: string): Promise<string> {
         }
         const filePath = path.join(activePhotosDir, filename)
         const normalizedRoot = path.normalize(activePhotosDir)
+        if (!path.normalize(filePath).startsWith(normalizedRoot)) {
+          res.writeHead(403)
+          res.end('Forbidden')
+          return
+        }
+        await sendFile(res, filePath)
+        return
+      }
+
+      const slideshowMatch = urlPath.match(/^\/slideshow\/([^/]+)$/)
+      if (slideshowMatch) {
+        if (!slideshowMemoriesDir) {
+          res.writeHead(503)
+          res.end('Server not ready')
+          return
+        }
+        const filename = decodeURIComponent(slideshowMatch[1])
+        if (!isSafeFilename(filename)) {
+          res.writeHead(400)
+          res.end('Bad request')
+          return
+        }
+        const filePath = path.join(slideshowMemoriesDir, filename)
+        const normalizedRoot = path.normalize(slideshowMemoriesDir)
         if (!path.normalize(filePath).startsWith(normalizedRoot)) {
           res.writeHead(403)
           res.end('Forbidden')
@@ -171,6 +232,7 @@ export function stopPhotoServer(): void {
     server = null
   }
   activePhotosDir = null
+  slideshowMemoriesDir = null
 }
 
 /** URL del QR: página de descarga (no el JPEG directo). */

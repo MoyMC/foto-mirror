@@ -2,12 +2,20 @@ interface FolderSelectorProps {
   photosDir: string | null
   onSelect: () => void
   electronAvailable: boolean
+  label?: string
+  emptyHint?: string
 }
 
-export function FolderSelector({ photosDir, onSelect, electronAvailable }: FolderSelectorProps) {
+export function FolderSelector({
+  photosDir,
+  onSelect,
+  electronAvailable,
+  label = 'Carpeta de fotos',
+  emptyHint,
+}: FolderSelectorProps) {
   return (
     <div className="folder-selector">
-      <p className="folder-selector__label">Carpeta de fotos</p>
+      <p className="folder-selector__label">{label}</p>
 
       {photosDir ? (
         <p className="folder-selector__path" title={photosDir}>
@@ -15,9 +23,10 @@ export function FolderSelector({ photosDir, onSelect, electronAvailable }: Folde
         </p>
       ) : (
         <p className="folder-selector__empty">
-          {electronAvailable
-            ? 'Aún no hay carpeta seleccionada'
-            : 'En el navegador las fotos se descargan; usa Electron para elegir carpeta.'}
+          {emptyHint ??
+            (electronAvailable
+              ? 'Aún no hay carpeta seleccionada'
+              : 'En el navegador las fotos se descargan; usa Electron para elegir carpeta.')}
         </p>
       )}
 

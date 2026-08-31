@@ -2,6 +2,15 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   selectPhotosDir: () => ipcRenderer.invoke('select-photos-dir') as Promise<string | null>,
+  selectSlideshowDir: () => ipcRenderer.invoke('select-slideshow-dir') as Promise<string | null>,
+  listSlideshowImages: (dir: string) =>
+    ipcRenderer.invoke('list-slideshow-images', dir) as Promise<string[]>,
+  listEventSlideshowImages: (photosDir: string) =>
+    ipcRenderer.invoke('list-event-slideshow-images', photosDir) as Promise<string[]>,
+  pathToFileUrl: (filePath: string) =>
+    ipcRenderer.invoke('path-to-file-url', filePath) as Promise<string>,
+  setSlideshowMemoriesDir: (dir: string | null) =>
+    ipcRenderer.invoke('set-slideshow-memories-dir', dir) as Promise<void>,
   getEventosBaseUrl: () => ipcRenderer.invoke('get-eventos-base-url') as Promise<string>,
   startPhotoServer: (photosDir: string) =>
     ipcRenderer.invoke('start-photo-server', photosDir) as Promise<string>,
@@ -21,6 +30,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     themeId?: string
   }) =>
     ipcRenderer.invoke('save-event-photos', input) as Promise<{
+      filePath: string
+      downloadUrl: string
+    }>,
+  saveStripPhotos: (input: {
+    photosDir: string
+    stripId: string
+    stripDataUrl: string
+    poses: Array<{
+      pose: 1 | 2 | 3
+      originalDataUrl?: string
+      originalFilePath?: string
+      editedDataUrl: string
+      reuseOriginalAsEdited: boolean
+    }>
+    themeId?: string
+  }) =>
+    ipcRenderer.invoke('save-strip-photos', input) as Promise<{
       filePath: string
       downloadUrl: string
     }>,

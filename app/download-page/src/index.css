@@ -177,6 +177,139 @@ button {
   max-width: 22rem;
 }
 
+.stack--wide {
+  max-width: 320px;
+}
+
+.strip-carousel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+}
+
+.strip-carousel__viewport {
+  width: 100%;
+  max-width: 280px;
+  overflow: visible;
+}
+
+.strip-carousel__track {
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: visible;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  border-radius: 28px;
+}
+
+.strip-carousel__track::-webkit-scrollbar {
+  display: none;
+}
+
+.strip-carousel__slide {
+  flex: 0 0 100%;
+  scroll-snap-align: center;
+  display: flex;
+  justify-content: center;
+}
+
+.photo--carousel {
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+
+.photo--carousel:not(.photo--carousel-active) {
+  opacity: 0.88;
+  transform: scale(0.97);
+}
+
+.strip-carousel__nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.strip-carousel__arrow {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  font-size: 1.35rem;
+  line-height: 1;
+  color: var(--neon);
+  background: rgba(244, 246, 250, 0.08);
+  border: 1px solid rgba(244, 246, 250, 0.14);
+  transition: opacity 0.15s ease;
+}
+
+.strip-carousel__arrow:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.strip-carousel__dots {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.strip-carousel__dot {
+  min-width: 2.5rem;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  background: rgba(244, 246, 250, 0.06);
+  border: 1px solid transparent;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.strip-carousel__dot--active {
+  color: var(--cta-text);
+  background: var(--cta);
+  border-color: var(--cta);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--neon) 35%, transparent);
+}
+
+.cta--stacked {
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.85rem 1.5rem;
+  min-height: 58px;
+}
+
+.cta__row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.cta__caption {
+  display: block;
+  min-height: 1.15em;
+  font-size: 0.78rem;
+  font-weight: 500;
+  opacity: 0.82;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
 .stack--error {
   text-align: center;
   gap: 0.85rem;
@@ -199,6 +332,36 @@ button {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* Tira en carrusel: ratio 1:3, imagen completa sin recorte */
+.photo.photo--carousel-strip {
+  width: min(200px, 54vw);
+  max-width: 200px;
+  aspect-ratio: 1 / 3;
+  max-height: min(68dvh, 600px);
+  height: auto;
+}
+
+.photo.photo--carousel-strip img {
+  object-fit: contain;
+  object-position: center;
+  background: #000;
+}
+
+.photo.photo--carousel-pose {
+  width: 100%;
+  max-width: 280px;
+  aspect-ratio: 2 / 3;
+}
+
+.photo.photo--carousel-pose img {
+  object-fit: cover;
+}
+
+.photo--carousel:not(.photo--carousel-strip) {
+  width: 100%;
+  max-width: 280px;
 }
 
 .photo--skeleton {
@@ -247,6 +410,16 @@ button {
   letter-spacing: -0.01em;
   box-shadow: var(--neon-glow), 0 4px 16px rgba(0, 0, 0, 0.4);
   transition: transform 0.12s ease, opacity 0.15s ease;
+}
+
+.photo--strip {
+  max-width: 200px;
+  aspect-ratio: 1 / 3;
+}
+
+.photo--strip img {
+  object-fit: contain;
+  background: #000;
 }
 
 .hint {
