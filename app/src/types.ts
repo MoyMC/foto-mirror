@@ -5,7 +5,7 @@ import type { PreviewRotation } from './lib/orientation'
 
 export type AppPhase = 'idle' | 'countdown' | 'strip-flash' | 'review' | 'share'
 
-export type PhotoMode = 'individual' | 'strip'
+export type PhotoMode = 'individual' | 'strip2' | 'strip3'
 
 export interface StripCaptureFrame {
   rawPhoto: string
@@ -15,7 +15,7 @@ export interface StripCaptureFrame {
 }
 
 export interface StripPoseSaveInput {
-  pose: 1 | 2 | 3
+  pose: number
   originalDataUrl?: string
   originalFilePath?: string
   editedDataUrl: string
@@ -25,18 +25,24 @@ export interface StripPoseSaveInput {
 export interface SaveStripPhotosInput {
   photosDir: string
   stripId: string
+  stripKind: 'strip2' | 'strip3'
   stripDataUrl: string
   poses: StripPoseSaveInput[]
   themeId?: string
+  signText?: string | null
+  previewRotation?: number | null
 }
 
 export interface StripManifest {
   type: 'strip'
   id: string
+  stripKind: 'strip2' | 'strip3'
   files: {
     strip: string
-    poses: [string, string, string]
+    poses: string[]
   }
+  signText?: string | null
+  themeId?: string | null
 }
 
 /** Cómo se toma la foto final tras el countdown. */
@@ -59,6 +65,19 @@ export interface SessionConfig {
   slideshowIncludeEventPhotos: boolean
   slideshowIdleEnabled: boolean
   slideshowIdleSeconds: SlideshowIdleSeconds
+  printEnabled: boolean
+  /** Windows printer queue, or simulate sentinel from main. */
+  printerName: string
+}
+
+export interface PrinterOption {
+  name: string
+  isDefault: boolean
+}
+
+export interface PrintSettings {
+  enabled: boolean
+  printerName: string
 }
 
 export interface TetherStatus {
@@ -128,6 +147,16 @@ export interface SaveEventPhotosInput {
   editedDataUrl?: string
   reuseOriginalAsEdited: boolean
   themeId?: string
+  printMeta?: {
+    signText?: string | null
+    signX?: number
+    signY?: number
+    signFontId?: string
+    signSizeId?: string
+    themeId?: string
+    previewRotation?: number
+    needsOrientationPass?: boolean
+  }
 }
 
 export interface ElectronAPI {
@@ -157,6 +186,10 @@ export interface ElectronAPI {
   deletePhotoFile: (filePath: string) => Promise<{ ok: boolean }>
   tetherStatus: () => Promise<TetherStatus>
   tetherCapture: (photosDir: string, timeoutMs?: number) => Promise<TetherCaptureResult>
+  listPrinters: () => Promise<PrinterOption[]>
+  getPrintSettings: () => Promise<PrintSettings>
+  setPrintSettings: (settings: Partial<PrintSettings>) => Promise<PrintSettings>
+  getSimulatePrinter: () => Promise<{ id: string; label: string }>
   openExternal: (url: string) => Promise<void>
   quitApp: () => Promise<void>
 }

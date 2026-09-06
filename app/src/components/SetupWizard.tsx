@@ -1,5 +1,11 @@
 import type { CSSProperties } from 'react'
-import type { CaptureMode, PreviewRotation, TetherStatus, VideoInputDevice } from '../types'
+import type {
+  CaptureMode,
+  PreviewRotation,
+  PrinterOption,
+  TetherStatus,
+  VideoInputDevice,
+} from '../types'
 import {
   EVENT_SIGN_FONTS,
   EVENT_SIGN_MAX_CHARS,
@@ -8,12 +14,14 @@ import {
   type EventSignSizeId,
 } from '../lib/eventSign'
 import { PREVIEW_ROTATIONS } from '../lib/orientation'
+import { SIMULATE_PRINTER_ID } from '../lib/sessionConfig'
 import { APP_THEMES, type AppThemeId } from '../lib/themes'
 import { CameraSelector } from './CameraSelector'
 import { FolderSelector } from './FolderSelector'
 import { SlideshowSetup } from './SlideshowSetup'
+import { ToggleSwitch } from './ToggleSwitch'
 
-type WizardStep = 1 | 2 | 3 | 4 | 5
+type WizardStep = 1 | 2 | 3 | 4 | 5 | 6
 
 interface SetupWizardProps {
   step: WizardStep
@@ -35,6 +43,11 @@ interface SetupWizardProps {
   slideshowIncludeEventPhotos: boolean
   slideshowIdleEnabled: boolean
   slideshowIdleSeconds: number
+  printEnabled: boolean
+  printerName: string
+  printers: PrinterOption[]
+  printersLoading: boolean
+  simulatePrinterLabel: string
   tetherStatus: TetherStatus | null
   tetherChecking: boolean
   testMessage: string | null
@@ -53,6 +66,9 @@ interface SetupWizardProps {
   onEventSignFontChange: (fontId: EventSignFontId) => void
   onEventSignSizeChange: (sizeId: EventSignSizeId) => void
   onSignPreset: (x: number, y: number) => void
+  onPrintEnabledChange: (enabled: boolean) => void
+  onPrinterNameChange: (name: string) => void
+  onRefreshPrinters: () => void
   onGoToStep: (step: WizardStep) => void
   onCheckTether: () => void
   onTestCapture: () => void
@@ -82,6 +98,11 @@ export function SetupWizard({
   slideshowIncludeEventPhotos,
   slideshowIdleEnabled,
   slideshowIdleSeconds,
+  printEnabled,
+  printerName,
+  printers,
+  printersLoading,
+  simulatePrinterLabel,
   tetherStatus,
   tetherChecking,
   testMessage,
@@ -100,6 +121,9 @@ export function SetupWizard({
   onEventSignFontChange,
   onEventSignSizeChange,
   onSignPreset,
+  onPrintEnabledChange,
+  onPrinterNameChange,
+  onRefreshPrinters,
   onGoToStep,
   onCheckTether,
   onTestCapture,
@@ -111,6 +135,7 @@ export function SetupWizard({
   const canGoNext = electronAvailable ? Boolean(photosDir) : true
   const canGoCapture = Boolean(selectedDeviceId && isReady && !error && canGoNext)
   const canStart = canGoCapture
+  const canConfirmPrint = canStart && (!printEnabled || Boolean(printerName))
 
   const tetherAvailable = Boolean(tetherStatus?.available)
   const tetherCanShoot = Boolean(tetherStatus?.canShoot)
@@ -136,7 +161,7 @@ export function SetupWizard({
       <div className="wizard__panel">
         <p className="wizard__eyebrow">Configuración</p>
         <h1 className="wizard__title">Preparar espejo</h1>
-        <p className="wizard__event">Carpeta, cámara, captura, color y letrero</p>
+        <p className="wizard__event">Carpeta, cámara, captura, color, letrero e impresión</p>
 
         <ol className="wizard__steps">
           {(
@@ -146,6 +171,7 @@ export function SetupWizard({
               [3, 'Captura'],
               [4, 'Color'],
               [5, 'Letrero'],
+              [6, 'Impresión'],
             ] as const
           ).map(([n, label]) => (
             <li key={n}>
@@ -447,8 +473,91 @@ export function SetupWizard({
               <button
                 type="button"
                 className="btn-primary wizard__confirm"
-                onClick={onConfirm}
+                onClick={onNext}
                 disabled={!canStart}
+              >
+                Continuar
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === 6 && (
+          <>
+            <p className="wizard__hint wizard__hint--left">
+              Si la impresión está apagada, en la web de descarga la pestaña Imprimir queda
+              deshabilitada.
+            </p>
+            <ToggleSwitch
+              id="wizard-print-enabled"
+              label="Habilitar impresión"
+              hint="DNP u otra impresora de Windows, o simulación sin papel."
+              checked={printEnabled}
+              onChange={onPrintEnabledChange}
+            />
+
+            {printEnabled && (
+              <div className="wizard__printers">
+                <div className="wizard__printers-head">
+                  <p className="wizard__meta">Impresora</p>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={onRefreshPrinters}
+                    disabled={printersLoading || !electronAvailable}
+                  >
+                    {printersLoading ? 'Buscando…' : 'Actualizar lista'}
+                  </button>
+                </div>
+                <div className="wizard__printer-list" role="radiogroup" aria-label="Impresora">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={printerName === SIMULATE_PRINTER_ID}
+                    className={`wizard__printer${
+                      printerName === SIMULATE_PRINTER_ID ? ' wizard__printer--active' : ''
+                    }`}
+                    onClick={() => onPrinterNameChange(SIMULATE_PRINTER_ID)}
+                  >
+                    <span className="wizard__printer-name">{simulatePrinterLabel}</span>
+                    <span className="wizard__printer-meta">Solo prueba · no usa papel</span>
+                  </button>
+                  {printers.map((printer) => (
+                    <button
+                      key={printer.name}
+                      type="button"
+                      role="radio"
+                      aria-checked={printerName === printer.name}
+                      className={`wizard__printer${
+                        printerName === printer.name ? ' wizard__printer--active' : ''
+                      }`}
+                      onClick={() => onPrinterNameChange(printer.name)}
+                    >
+                      <span className="wizard__printer-name">{printer.name}</span>
+                      {printer.isDefault ? (
+                        <span className="wizard__printer-meta">Predeterminada</span>
+                      ) : null}
+                    </button>
+                  ))}
+                  {!printersLoading && printers.length === 0 && (
+                    <p className="wizard__hint wizard__hint--left">
+                      No se detectaron impresoras de Windows. Puedes usar simulación o revisar
+                      Configuración → Impresoras.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="wizard__actions">
+              <button type="button" className="btn-secondary wizard__back" onClick={onBack}>
+                Atrás
+              </button>
+              <button
+                type="button"
+                className="btn-primary wizard__confirm"
+                onClick={onConfirm}
+                disabled={!canConfirmPrint}
               >
                 Comenzar
               </button>

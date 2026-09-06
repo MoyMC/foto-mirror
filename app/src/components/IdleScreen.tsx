@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { AppConfig, FilterPreset, PhotoMode } from '../types'
+import { poseCountForMode } from '../lib/photoMode'
 import { FilterBar } from './FilterBar'
 
 export const COUNTDOWN_OPTIONS = [3, 5, 7, 10] as const
@@ -8,7 +9,8 @@ type RailPanel = 'photo-mode' | 'filters' | 'seconds' | 'strip-0' | 'strip-1' | 
 
 const PHOTO_MODE_OPTIONS: { mode: PhotoMode; label: string }[] = [
   { mode: 'individual', label: '1 Foto' },
-  { mode: 'strip', label: 'Tira' },
+  { mode: 'strip2', label: 'Tira 2' },
+  { mode: 'strip3', label: 'Tira 3' },
 ]
 
 interface IdleScreenProps {
@@ -29,7 +31,15 @@ interface IdleScreenProps {
 }
 
 function PhotoModeIcon({ mode }: { mode: PhotoMode }) {
-  if (mode === 'strip') {
+  if (mode === 'strip2') {
+    return (
+      <svg className="idle__rail-icon" viewBox="0 0 24 24" aria-hidden>
+        <rect x="6" y="4" width="12" height="7" rx="1.2" fill="currentColor" />
+        <rect x="6" y="13" width="12" height="7" rx="1.2" fill="currentColor" />
+      </svg>
+    )
+  }
+  if (mode === 'strip3') {
     return (
       <svg className="idle__rail-icon" viewBox="0 0 24 24" aria-hidden>
         <rect x="6" y="3" width="12" height="5" rx="1.2" fill="currentColor" />
@@ -68,7 +78,9 @@ export function IdleScreen({
     setOpenPanel((current) => (current === panel ? null : panel))
   }
 
-  const photoModeLabel = photoMode === 'individual' ? '1 Foto' : 'Tira'
+  const photoModeLabel =
+    photoMode === 'individual' ? '1 Foto' : photoMode === 'strip2' ? 'Tira 2' : 'Tira 3'
+  const poseCount = poseCountForMode(photoMode)
 
   const stripPanelIndex =
     openPanel === 'strip-0' ? 0 : openPanel === 'strip-1' ? 1 : openPanel === 'strip-2' ? 2 : null
@@ -78,9 +90,11 @@ export function IdleScreen({
       <div className="screen__overlay" />
       <div className="idle__hero">
         <p className="idle__sub">
-          {photoMode === 'strip'
-            ? 'Modo tira: 3 poses con el mismo countdown'
-            : 'Posa frente al espejo y captura el momento'}
+          {photoMode === 'strip2'
+            ? 'Tira de 2: dos poses · al imprimir espera otra tira'
+            : photoMode === 'strip3'
+              ? 'Tira de 3: tres poses en una hoja completa'
+              : 'Posa frente al espejo y captura el momento'}
         </p>
       </div>
 
@@ -122,7 +136,7 @@ export function IdleScreen({
                 }}
               />
             )}
-            {stripPanelIndex !== null && (
+            {stripPanelIndex !== null && stripPanelIndex < poseCount && (
               <FilterBar
                 filters={filters}
                 activeFilterId={stripFilterIds[stripPanelIndex]}
@@ -186,7 +200,7 @@ export function IdleScreen({
               <span className="idle__rail-label">Filtros</span>
             </button>
           ) : (
-            ([0, 1, 2] as const).map((index) => {
+            (Array.from({ length: poseCount }, (_, i) => i) as Array<0 | 1 | 2>).map((index) => {
               const panel = `strip-${index}` as const
               const isOpen = openPanel === panel
               return (

@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import sharp from 'sharp'
 
 const execFileAsync = promisify(execFile)
 
@@ -291,7 +292,14 @@ export async function captureTethered(opts: {
     }
 
     const buffer = await fs.promises.readFile(res.filePath)
-    const dataUrl = `data:image/jpeg;base64,${buffer.toString('base64')}`
+    // Keep sensor pixels and clear EXIF orientation so the renderer/browser
+    // don't auto-rotate. Wizard rotation is applied in composePhoto instead.
+    const normalized = await sharp(buffer)
+      .withMetadata({ orientation: 1 })
+      .jpeg({ quality: 95, mozjpeg: true })
+      .toBuffer()
+    await fs.promises.writeFile(res.filePath, normalized)
+    const dataUrl = `data:image/jpeg;base64,${normalized.toString('base64')}`
     return { ok: true, filePath: res.filePath, dataUrl }
   } catch (err) {
     return {

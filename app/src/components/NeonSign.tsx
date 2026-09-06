@@ -171,6 +171,7 @@ export function drawNeonSign(
   fontId: EventSignFontId = DEFAULT_EVENT_SIGN_FONT,
   sizeId: EventSignSizeId = DEFAULT_EVENT_SIGN_SIZE,
   previewRotation: PreviewRotation = DEFAULT_PREVIEW_ROTATION,
+  usePhotoCoords = false,
 ): void {
   const lines = eventSignLines(text)
   if (lines.length === 0) return
@@ -190,15 +191,18 @@ export function drawNeonSign(
 
   const maxLineW = lines.reduce((widest, line) => Math.max(widest, ctx.measureText(line).width), 0)
   const blockH = Math.max(lineHeight, (lines.length - 1) * lineHeight + fontSize * 0.2)
-  const mapped = mapSignPreviewToPhoto(xPercent, yPercent, previewRotation)
+  const glowPad = fontSize * 0.6
+  const mapped = usePhotoCoords
+    ? { x: xPercent, y: yPercent }
+    : mapSignPreviewToPhoto(xPercent, yPercent, previewRotation)
   const fitted = clampSignCenter(
     mapped.x,
     mapped.y,
-    maxLineW / 2,
-    blockH / 2,
+    maxLineW / 2 + glowPad,
+    blockH / 2 + glowPad,
     width,
     height,
-    Math.round(width * 0.03),
+    Math.round(Math.min(width, height) * 0.05),
   )
   const cx = (width * fitted.x) / 100
   const cy = (height * fitted.y) / 100

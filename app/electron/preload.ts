@@ -28,6 +28,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     editedDataUrl?: string
     reuseOriginalAsEdited: boolean
     themeId?: string
+    printMeta?: {
+      signText?: string | null
+      signX?: number
+      signY?: number
+      signFontId?: string
+      signSizeId?: string
+      themeId?: string
+      previewRotation?: number
+      needsOrientationPass?: boolean
+    }
   }) =>
     ipcRenderer.invoke('save-event-photos', input) as Promise<{
       filePath: string
@@ -36,15 +46,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveStripPhotos: (input: {
     photosDir: string
     stripId: string
+    stripKind: 'strip2' | 'strip3'
     stripDataUrl: string
     poses: Array<{
-      pose: 1 | 2 | 3
+      pose: number
       originalDataUrl?: string
       originalFilePath?: string
       editedDataUrl: string
       reuseOriginalAsEdited: boolean
     }>
     themeId?: string
+    signText?: string | null
+    previewRotation?: number | null
   }) =>
     ipcRenderer.invoke('save-strip-photos', input) as Promise<{
       filePath: string
@@ -76,6 +89,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
       dataUrl?: string
       error?: string
     }>,
+  listPrinters: () =>
+    ipcRenderer.invoke('list-printers') as Promise<Array<{ name: string; isDefault: boolean }>>,
+  getPrintSettings: () =>
+    ipcRenderer.invoke('get-print-settings') as Promise<{
+      enabled: boolean
+      printerName: string
+    }>,
+  setPrintSettings: (settings: { enabled?: boolean; printerName?: string }) =>
+    ipcRenderer.invoke('set-print-settings', settings) as Promise<{
+      enabled: boolean
+      printerName: string
+    }>,
+  getSimulatePrinter: () =>
+    ipcRenderer.invoke('get-simulate-printer') as Promise<{ id: string; label: string }>,
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   quitApp: () => ipcRenderer.invoke('quit-app'),
 })

@@ -1,14 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { StripPrintTab, type PrintCropRect, type StripTemplateId } from './StripPrintPrep'
+import {
+  IndividualPrintTab,
+  type IndividualFrameId,
+  type InstagramFrameOptions,
+} from './IndividualPrintTab'
+import brandLogo from './assets/garys-festa-logo.png'
 
 type PageState = 'loading' | 'ready' | 'error'
 
 interface StripManifest {
   type: 'strip'
   id: string
+  stripKind: 'strip2' | 'strip3'
   files: {
     strip: string
-    poses: [string, string, string]
+    poses: string[]
   }
+  signText?: string | null
+  themeId?: string | null
 }
 
 interface StripSlide {
@@ -17,6 +27,23 @@ interface StripSlide {
   caption: string
   variant: 'strip' | 'pose'
   alt: string
+}
+
+type PrintStatus =
+  | 'available'
+  | 'waiting_pair'
+  | 'queued'
+  | 'printing'
+  | 'printed'
+  | 'failed'
+  | 'expired'
+
+interface PrintApiResponse {
+  ok: boolean
+  photoId?: string
+  type?: 'strip' | 'individual'
+  status?: PrintStatus
+  message?: string
 }
 
 const THEMES = new Set([
@@ -44,6 +71,253 @@ function photoUrlFor(filename: string): string {
 function stripIdFromFilename(filename: string): string | null {
   const match = filename.match(/^tira-(\d+)-strip\.jpg$/i)
   return match ? match[1] : null
+}
+
+function printQrFilename(filename: string, stripId: string | null): string {
+  if (stripId) return `tira-${stripId}-strip.jpg`
+  return filename
+}
+
+async function fetchStripManifest(qrFilename: string): Promise<StripManifest | null> {
+  try {
+    const res = await fetch(`/api/strip?qr=${encodeURIComponent(qrFilename)}`)
+    if (!res.ok) return null
+    const data = (await res.json()) as StripManifest
+    return data.type === 'strip' ? data : null
+  } catch {
+    return null
+  }
+}
+
+async function fetchEventConfig(): Promise<{ printEnabled: boolean }> {
+  try {
+    const res = await fetch('/api/config')
+    if (!res.ok) return { printEnabled: false }
+    const data = (await res.json()) as { printEnabled?: unknown }
+    return { printEnabled: data.printEnabled === true }
+  } catch {
+    return { printEnabled: false }
+  }
+}
+
+async function fetchPrintStatus(qrFilename: string): Promise<PrintApiResponse> {
+  const res = await fetch(`/api/print/status?qr=${encodeURIComponent(qrFilename)}`)
+  return (await res.json()) as PrintApiResponse
+}
+
+async function requestPrint(
+  qrFilename: string,
+  options?: {
+    templateId?: string
+    crops?: PrintCropRect[]
+    frameOptions?: InstagramFrameOptions
+  },
+): Promise<PrintApiResponse> {
+  const res = await fetch('/api/print', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      qrFilename,
+      templateId: options?.templateId,
+      crops: options?.crops,
+      frameOptions: options?.frameOptions,
+    }),
+  })
+  return (await res.json()) as PrintApiResponse
+}
+
+function printButtonLabel(status: PrintStatus | null, message: string | null): string {
+  if (!status || status === 'available') return 'Imprimir'
+  if (status === 'waiting_pair') return 'Esperando otra tira'
+  if (status === 'queued') return 'En cola'
+  if (status === 'printing') return 'Imprimiendo…'
+  if (status === 'printed') return 'Ya impreso'
+  if (status === 'failed') return 'Error de impresión'
+  if (status === 'expired') return 'No disponible'
+  return message ?? 'Imprimir'
+}
+
+function printIsDisabled(status: PrintStatus | null, busy: boolean): boolean {
+  if (busy) return true
+  if (status === null) return true
+  return status !== 'available'
+}
+
+function PrintIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M6 9V2h12v7" />
+      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+      <rect x="6" y="14" width="12" height="8" rx="1" />
+    </svg>
+  )
+}
+
+interface PrintControlsProps {
+  qrFilename: string
+  photoUrl?: string | null
+  stripKind?: 'strip2' | 'strip3' | null
+  poseFiles?: string[] | null
+  signText?: string | null
+}
+
+function PrintControls({
+  qrFilename,
+  photoUrl = null,
+  stripKind = null,
+  poseFiles = null,
+  signText = null,
+}: PrintControlsProps) {
+  const [status, setStatus] = useState<PrintStatus | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const refreshStatus = useCallback(async () => {
+    try {
+      const data = await fetchPrintStatus(qrFilename)
+      if (data.status) {
+        setStatus(data.status)
+      } else if (data.ok === false && !data.status) {
+        setStatus('available')
+      }
+      if (data.message) setMessage(data.message)
+      else if (data.ok === false && data.status === 'expired') setMessage('La sesión del evento ya terminó')
+    } catch {
+      // ignore polling errors
+    }
+  }, [qrFilename])
+
+  useEffect(() => {
+    void refreshStatus()
+  }, [refreshStatus])
+
+  useEffect(() => {
+    if (status === null) {
+      void refreshStatus()
+      return
+    }
+    if (status === 'printed' || status === 'failed' || status === 'expired') return
+    const timer = setInterval(() => {
+      void refreshStatus()
+    }, 2_000)
+    return () => clearInterval(timer)
+  }, [status, refreshStatus])
+
+  const submitPrint = async (options?: {
+    templateId?: string
+    crops?: PrintCropRect[]
+    frameOptions?: InstagramFrameOptions
+  }) => {
+    setBusy(true)
+    try {
+      const data = await requestPrint(qrFilename, options)
+      if (data.status) setStatus(data.status)
+      if (data.message) setMessage(data.message)
+      else if (!data.ok) setMessage('No se pudo solicitar la impresión')
+    } catch {
+      setMessage('No se pudo solicitar la impresión')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const hint =
+    status === 'waiting_pair'
+      ? 'Cuando otra persona imprima su tira de 2, saldrán las dos en la misma hoja'
+      : status === 'printed'
+        ? 'Solo se permite una impresión por QR'
+        : 'Una copia física por enlace · las descargas son ilimitadas'
+
+  if (stripKind && poseFiles && poseFiles.length > 0) {
+    return (
+      <StripPrintTab
+        stripKind={stripKind}
+        poseFiles={poseFiles}
+        photoUrlFor={photoUrlFor}
+        signText={signText}
+        busy={busy}
+        canPrint={!printIsDisabled(status, busy)}
+        printStatus={status}
+        statusLabel={printButtonLabel(status, message)}
+        statusHint={message ?? hint}
+        onConfirm={(templateId, crops) => {
+          void submitPrint({ templateId, crops })
+        }}
+      />
+    )
+  }
+
+  if (photoUrl) {
+    return (
+      <IndividualPrintTab
+        photoUrl={photoUrl}
+        busy={busy}
+        canPrint={!printIsDisabled(status, busy)}
+        printStatus={status}
+        statusLabel={printButtonLabel(status, message)}
+        statusHint={message ?? hint}
+        onConfirm={(templateId: IndividualFrameId, frameOptions?: InstagramFrameOptions) => {
+          void submitPrint({
+            templateId,
+            frameOptions: templateId === 'instagram' ? frameOptions : undefined,
+          })
+        }}
+      />
+    )
+  }
+
+  if (status != null && status !== 'available') {
+    const title =
+      status === 'printed'
+        ? 'Listo'
+        : status === 'printing' || status === 'queued'
+          ? 'En camino'
+          : status === 'failed'
+            ? 'No se pudo imprimir'
+            : status === 'expired'
+              ? 'No disponible'
+              : printButtonLabel(status, message)
+    return (
+      <div
+        className={`print-status-card${status === 'printed' ? ' print-status-card--done' : ''}${
+          status === 'queued' || status === 'printing' || status === 'waiting_pair'
+            ? ' print-status-card--wait'
+            : ''
+        }`}
+      >
+        <div className="print-status-card__mark" aria-hidden>
+          {status === 'printed' ? '✓' : status === 'failed' || status === 'expired' ? '!' : '…'}
+        </div>
+        <h2 className="print-status-card__title">{title}</h2>
+        <p className="print-status-card__detail">{message ?? hint}</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="print-controls">
+      <button
+        type="button"
+        className="cta cta--secondary"
+        disabled={printIsDisabled(status, busy)}
+        onClick={() => void submitPrint({ templateId: 'none' })}
+      >
+        <PrintIcon />
+        {busy ? 'Solicitando…' : printButtonLabel(status, message)}
+      </button>
+      <p className="hint hint--print">{message ?? hint}</p>
+    </div>
+  )
 }
 
 function loadImage(src: string): Promise<void> {
@@ -85,10 +359,7 @@ function triggerDownload(filename: string) {
   a.remove()
 }
 
-function buildStripSlides(
-  stripFile: string,
-  poseFiles: [string, string, string],
-): StripSlide[] {
+function buildStripSlides(stripFile: string, poseFiles: string[]): StripSlide[] {
   return [
     {
       filename: stripFile,
@@ -261,20 +532,22 @@ export default function App() {
   const [state, setState] = useState<PageState>(() => (filename ? 'loading' : 'error'))
   const [pressed, setPressed] = useState(false)
   const [manifest, setManifest] = useState<StripManifest | null>(null)
+  const [tab, setTab] = useState<'download' | 'print'>('download')
+  const [printEnabled, setPrintEnabled] = useState(false)
 
   const stripId = filename ? stripIdFromFilename(filename) : null
   const isStrip = Boolean(stripId)
 
-  const poseFiles = manifest?.files.poses ?? (
-    stripId
-      ? ([
-          `tira-${stripId}-1.jpg`,
-          `tira-${stripId}-2.jpg`,
-          `tira-${stripId}-3.jpg`,
-        ] as [string, string, string])
-      : null
-  )
+  const poseFiles = useMemo(() => {
+    if (manifest?.files.poses) return manifest.files.poses
+    if (!stripId) return null
+    if (manifest?.stripKind === 'strip2') {
+      return [`tira-${stripId}-1.jpg`, `tira-${stripId}-2.jpg`]
+    }
+    return [`tira-${stripId}-1.jpg`, `tira-${stripId}-2.jpg`, `tira-${stripId}-3.jpg`]
+  }, [manifest, stripId])
 
+  const stripKind = manifest?.stripKind ?? (poseFiles?.length === 2 ? 'strip2' : 'strip3')
   const stripFile = manifest?.files.strip ?? filename
 
   const stripSlides = useMemo(() => {
@@ -282,9 +555,27 @@ export default function App() {
     return buildStripSlides(stripFile, poseFiles)
   }, [isStrip, stripFile, poseFiles])
 
+  const qrForPrint = filename ? printQrFilename(filename, stripId) : null
+
   useEffect(() => {
     document.documentElement.dataset.theme = theme
   }, [theme])
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      const cfg = await fetchEventConfig()
+      if (cancelled) return
+      setPrintEnabled(cfg.printEnabled)
+      if (!cfg.printEnabled) setTab('download')
+    }
+    void load()
+    const timer = window.setInterval(() => void load(), 8_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [])
 
   useEffect(() => {
     if (!filename) {
@@ -296,17 +587,8 @@ export default function App() {
 
     void (async () => {
       if (stripId) {
-        try {
-          const res = await fetch(photoUrlFor(`tira-${stripId}.json`))
-          if (res.ok) {
-            const data = (await res.json()) as StripManifest
-            if (!cancelled && data.type === 'strip') {
-              setManifest(data)
-            }
-          }
-        } catch {
-          // fallback por convención de nombres
-        }
+        const data = await fetchStripManifest(`tira-${stripId}-strip.jpg`)
+        if (!cancelled && data) setManifest(data)
       }
 
       try {
@@ -335,8 +617,48 @@ export default function App() {
       </div>
 
       <header className="header">
-        <h1 className="brand">Espejo Fotos</h1>
+        <img
+          className="brand-logo"
+          src={brandLogo}
+          alt="Gary's Festa"
+          width={220}
+          height={220}
+          decoding="async"
+        />
         <p className="tagline">{isStrip ? 'Tu tira del evento' : 'Tu foto del evento'}</p>
+        {state === 'ready' && (
+          <div className="page-tabs" role="tablist" aria-label="Acciones">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'download'}
+              className={`page-tabs__btn${tab === 'download' ? ' page-tabs__btn--active' : ''}`}
+              onClick={() => setTab('download')}
+            >
+              Descargar
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'print'}
+              aria-disabled={!printEnabled}
+              disabled={!printEnabled}
+              title={
+                printEnabled
+                  ? undefined
+                  : 'La impresión no está habilitada en este evento'
+              }
+              className={`page-tabs__btn${tab === 'print' ? ' page-tabs__btn--active' : ''}${
+                !printEnabled ? ' page-tabs__btn--disabled' : ''
+              }`}
+              onClick={() => {
+                if (printEnabled) setTab('print')
+              }}
+            >
+              Imprimir
+            </button>
+          </div>
+        )}
       </header>
 
       <main className="main">
@@ -357,7 +679,7 @@ export default function App() {
           </div>
         )}
 
-        {state === 'ready' && filename && (
+        {state === 'ready' && filename && tab === 'download' && (
           <div className="stack">
             {stripSlides ? (
               <StripCarousel slides={stripSlides} onDownload={triggerDownload} />
@@ -381,6 +703,18 @@ export default function App() {
                 <p className="hint">También puedes guardar desde el menú del navegador</p>
               </>
             )}
+          </div>
+        )}
+
+        {state === 'ready' && filename && tab === 'print' && qrForPrint && printEnabled && (
+          <div className="stack">
+            <PrintControls
+              qrFilename={qrForPrint}
+              photoUrl={isStrip ? null : photoUrlFor(filename)}
+              stripKind={isStrip ? stripKind : null}
+              poseFiles={isStrip ? poseFiles : null}
+              signText={manifest?.signText ?? null}
+            />
           </div>
         )}
       </main>

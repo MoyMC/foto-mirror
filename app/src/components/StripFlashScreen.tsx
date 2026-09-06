@@ -1,10 +1,9 @@
-import { STRIP_POSE_COUNT } from '../lib/photoMode'
-
 interface StripFlashScreenProps {
   completedPose: number
+  poseCount: number
 }
 
-export function StripFlashScreen({ completedPose }: StripFlashScreenProps) {
+export function StripFlashScreen({ completedPose, poseCount }: StripFlashScreenProps) {
   const nextPose = completedPose + 1
 
   return (
@@ -13,7 +12,7 @@ export function StripFlashScreen({ completedPose }: StripFlashScreenProps) {
       <div className="strip-flash__message">
         <p className="strip-flash__done">Foto {completedPose} lista</p>
         <p className="strip-flash__next">
-          Siguiente: pose {nextPose} de {STRIP_POSE_COUNT}
+          Siguiente: pose {nextPose} de {poseCount}
         </p>
       </div>
     </div>

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AppPhase, CaptureMode, PhotoMode, StripCaptureFrame, TetherStatus } from './types'
+import type { AppPhase, CaptureMode, PhotoMode, PrinterOption, StripCaptureFrame, TetherStatus } from './types'
 import { appConfig } from './lib/appConfig'
 import { getFilterCss, resolveFilters } from './lib/filters'
 import { useFilterThumbnails } from './hooks/useFilterThumbnails'
 import {
   captureModeLabel,
+  DEFAULT_PRINTER_NAME,
   loadStoredCaptureMode,
   loadStoredEventSignFontId,
   loadStoredEventSignSizeId,
@@ -13,6 +14,8 @@ import {
   loadStoredEventSignY,
   loadStoredPhotosDir,
   loadStoredPreviewRotation,
+  loadStoredPrintEnabled,
+  loadStoredPrinterName,
   loadStoredSlideshowIdleEnabled,
   loadStoredSlideshowIdleSeconds,
   loadStoredSlideshowIncludeEventPhotos,
@@ -20,12 +23,13 @@ import {
   loadStoredThemeId,
   saveSessionConfig,
   shortPath,
+  SIMULATE_PRINTER_ID,
 } from './lib/sessionConfig'
 import { constrainEventSignInput, hasEventSign, normalizeEventSign } from './lib/eventSign'
 import { normalizeSlideshowIdleSeconds } from './lib/slideshow'
 import { composePhoto } from './lib/composePhoto'
 import { composePhotoStrip } from './lib/stripCompositor'
-import { createStripId, STRIP_FLASH_MS, STRIP_POSE_COUNT } from './lib/photoMode'
+import { createStripId, isStripMode, poseCountForMode, STRIP_FLASH_MS } from './lib/photoMode'
 import { type PreviewRotation } from './lib/orientation'
 import { applyAppTheme, themeNeonColor, type AppThemeId } from './lib/themes'
 import { pickDefaultDeviceId, useCamera } from './hooks/useCamera'
@@ -47,7 +51,7 @@ import './App.css'
 const OPERATOR_UNLOCK_MS = 90_000
 
 function App() {
-  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4 | 5>(1)
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1)
   const [setupComplete, setSetupComplete] = useState(false)
   const [photosDir, setPhotosDir] = useState<string | null>(null)
   const [captureMode, setCaptureMode] = useState<CaptureMode>('preview')
@@ -72,6 +76,11 @@ function App() {
   const [slideshowIdleSeconds, setSlideshowIdleSeconds] = useState(() =>
     loadStoredSlideshowIdleSeconds(),
   )
+  const [printEnabled, setPrintEnabled] = useState(() => loadStoredPrintEnabled())
+  const [printerName, setPrinterName] = useState(() => loadStoredPrinterName())
+  const [printers, setPrinters] = useState<PrinterOption[]>([])
+  const [printersLoading, setPrintersLoading] = useState(false)
+  const [simulatePrinterLabel, setSimulatePrinterLabel] = useState('Simulación (no imprime)')
   const [slideshowRefreshKey, setSlideshowRefreshKey] = useState(0)
   const [tetherStatus, setTetherStatus] = useState<TetherStatus | null>(null)
   const [tetherChecking, setTetherChecking] = useState(false)
@@ -114,6 +123,9 @@ function App() {
   >(null)
   const capturingRef = useRef(false)
   const unlockTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const stripPoseCount = poseCountForMode(photoMode)
+  const stripMode = isStripMode(photoMode)
 
   const electronAvailable = Boolean(window.electronAPI)
 
@@ -218,17 +230,21 @@ function App() {
           const needsOrientation = Boolean(frame.tetherSourcePath) && !frame.usedFallback
           return composePhoto(frame.rawPhoto, filter, {
             ...composeOverlay,
+            signText: '',
             needsOrientationPass: needsOrientation,
           })
         }),
       )
-      const strip = await composePhotoStrip(cells)
+      const portraitStrip = previewRotation === 90 || previewRotation === 270
+      const strip = await composePhotoStrip(cells, {
+        cellAspect: portraitStrip ? 2 / 3 : 3 / 2,
+      })
       setStripComposedCells(cells)
       setStripFrames(frames)
       setReviewPhoto(strip)
       setPhase('review')
     },
-    [composeOverlay, filters, stripFilterIds],
+    [composeOverlay, filters, stripFilterIds, previewRotation],
   )
 
   const clearStripTetherFiles = useCallback((frames: StripCaptureFrame[]) => {
@@ -339,6 +355,41 @@ function App() {
     void refreshTetherStatus()
   }, [wizardStep, setupComplete, refreshTetherStatus])
 
+  const refreshPrinters = useCallback(async () => {
+    if (!window.electronAPI?.listPrinters) {
+      setPrinters([])
+      return
+    }
+    setPrintersLoading(true)
+    try {
+      const [list, simulate] = await Promise.all([
+        window.electronAPI.listPrinters(),
+        window.electronAPI.getSimulatePrinter?.() ??
+          Promise.resolve({ id: SIMULATE_PRINTER_ID, label: 'Simulación (no imprime)' }),
+      ])
+      setPrinters(list)
+      setSimulatePrinterLabel(simulate.label)
+      setPrinterName((current) => {
+        if (current === SIMULATE_PRINTER_ID || current === simulate.id) return simulate.id
+        if (list.some((p) => p.name === current)) return current
+        const preferred =
+          list.find((p) => p.name === DEFAULT_PRINTER_NAME) ??
+          list.find((p) => p.isDefault) ??
+          list[0]
+        return preferred?.name ?? SIMULATE_PRINTER_ID
+      })
+    } catch {
+      setPrinters([])
+    } finally {
+      setPrintersLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (wizardStep !== 6 || setupComplete) return
+    void refreshPrinters()
+  }, [wizardStep, setupComplete, refreshPrinters])
+
   const handleThemeChange = (id: AppThemeId) => {
     setThemeId(id)
     applyAppTheme(id)
@@ -404,7 +455,7 @@ function App() {
         return
       }
 
-      if (photoMode === 'strip') {
+      if (stripMode) {
         const frame: StripCaptureFrame = {
           rawPhoto: result.photo,
           tetherSourcePath: result.tetherFilePath ?? null,
@@ -414,7 +465,7 @@ function App() {
         const nextFrames = [...stripFramesRef.current, frame]
         stripFramesRef.current = nextFrames
 
-        if (nextFrames.length < STRIP_POSE_COUNT) {
+        if (nextFrames.length < stripPoseCount) {
           setStripPose(nextFrames.length)
           setStripFlashCompleted(nextFrames.length)
           setPhase('strip-flash')
@@ -443,6 +494,8 @@ function App() {
     countdownSeconds,
     takePhoto,
     photoMode,
+    stripMode,
+    stripPoseCount,
     finishStripSession,
   ])
 
@@ -522,6 +575,8 @@ function App() {
         slideshowIncludeEventPhotos,
         slideshowIdleEnabled,
         slideshowIdleSeconds,
+        printEnabled,
+        printerName,
       })
     }
 
@@ -529,6 +584,10 @@ function App() {
     setEventSignText(normalizeEventSign(eventSignText))
 
     if (window.electronAPI && photosDir) {
+      await window.electronAPI.setPrintSettings?.({
+        enabled: printEnabled,
+        printerName,
+      })
       await window.electronAPI.startPhotoServer(photosDir)
       await window.electronAPI.setSlideshowMemoriesDir(slideshowMemoriesDir)
     }
@@ -569,7 +628,7 @@ function App() {
 
   const startCountdown = () => {
     if (!isReady) return
-    if (photoMode === 'strip') {
+    if (stripMode) {
       stripFramesRef.current = []
       setStripFrames([])
       setStripComposedCells([])
@@ -582,7 +641,7 @@ function App() {
   }
 
   const retake = () => {
-    if (photoMode === 'strip') {
+    if (stripMode) {
       clearStripTetherFiles(stripFrames)
       stripFramesRef.current = []
       setStripFrames([])
@@ -607,17 +666,18 @@ function App() {
     const individualPhoto = composedPhoto
     const stripPhoto = reviewPhoto
 
-    if (photoMode === 'strip') {
-      if (!stripPhoto || stripFrames.length !== STRIP_POSE_COUNT || !stripId || !photosDir) return
+    if (stripMode) {
+      if (!stripPhoto || stripFrames.length !== stripPoseCount || !stripId || !photosDir) return
       if (!window.electronAPI?.saveStripPhotos) return
 
       const poses = stripFrames.map((frame, index) => {
         const keepNative = Boolean(frame.tetherSourcePath) && !frame.usedFallback
-        const needsEdit =
-          hasEventSign(eventSignText) || stripFilterIds[index] !== 'normal' || keepNative
+        // Always persist composed cells (orientation + filter) so print matches the web crop UI.
+        const hasComposed = Boolean(stripComposedCells[index])
+        const needsEdit = hasComposed || stripFilterIds[index] !== 'normal' || keepNative
 
         return {
-          pose: (index + 1) as 1 | 2 | 3,
+          pose: index + 1,
           originalFilePath: keepNative ? frame.tetherSourcePath! : undefined,
           originalDataUrl: keepNative ? undefined : frame.rawPhoto,
           editedDataUrl: stripComposedCells[index] ?? frame.rawPhoto,
@@ -628,9 +688,12 @@ function App() {
       const result = await window.electronAPI.saveStripPhotos({
         photosDir,
         stripId,
+        stripKind: photoMode === 'strip2' ? 'strip2' : 'strip3',
         stripDataUrl: stripPhoto,
         poses,
         themeId,
+        signText: hasEventSign(eventSignText) ? normalizeEventSign(eventSignText) : null,
+        previewRotation,
       })
 
       for (const frame of stripFrames) {
@@ -665,6 +728,16 @@ function App() {
         editedDataUrl: needsEdit ? composedPhoto : undefined,
         reuseOriginalAsEdited: !needsEdit,
         themeId,
+        printMeta: {
+          signText: hasEventSign(eventSignText) ? normalizeEventSign(eventSignText) : null,
+          signX: eventSignX,
+          signY: eventSignY,
+          signFontId: eventSignFontId,
+          signSizeId: eventSignSizeId,
+          themeId,
+          previewRotation,
+          needsOrientationPass: keepNative,
+        },
       })
 
       if (tetherSourcePath && !keepNative && window.electronAPI.deletePhotoFile) {
@@ -698,7 +771,7 @@ function App() {
   const previewFilter =
     photoMode === 'individual' && activeFilter ? getFilterCss(activeFilter) : 'none'
 
-  const reviewDisplayPhoto = photoMode === 'strip' ? reviewPhoto : composedPhoto
+  const reviewDisplayPhoto = stripMode ? reviewPhoto : composedPhoto
   const canShowReview = Boolean(reviewDisplayPhoto) && phase === 'review'
 
   return (
@@ -781,6 +854,11 @@ function App() {
           slideshowIncludeEventPhotos={slideshowIncludeEventPhotos}
           slideshowIdleEnabled={slideshowIdleEnabled}
           slideshowIdleSeconds={slideshowIdleSeconds}
+          printEnabled={printEnabled}
+          printerName={printerName}
+          printers={printers}
+          printersLoading={printersLoading}
+          simulatePrinterLabel={simulatePrinterLabel}
           onCameraSelect={setSelectedCameraId}
           onCameraRefresh={() => {
             refreshCameras()
@@ -796,11 +874,18 @@ function App() {
             setEventSignX(x)
             setEventSignY(y)
           }}
+          onPrintEnabledChange={setPrintEnabled}
+          onPrinterNameChange={setPrinterName}
+          onRefreshPrinters={() => void refreshPrinters()}
           onGoToStep={setWizardStep}
           onCheckTether={() => void refreshTetherStatus()}
           onTestCapture={() => void handleTestCapture()}
-          onBack={() => setWizardStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3 | 4 | 5) : 1))}
-          onNext={() => setWizardStep((s) => (s < 5 ? ((s + 1) as 1 | 2 | 3 | 4 | 5) : 5))}
+          onBack={() =>
+            setWizardStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3 | 4 | 5 | 6) : 1))
+          }
+          onNext={() =>
+            setWizardStep((s) => (s < 6 ? ((s + 1) as 1 | 2 | 3 | 4 | 5 | 6) : 6))
+          }
           onConfirm={() => void handleWizardConfirm()}
           onReconnect={reconnect}
         />
@@ -852,27 +937,25 @@ function App() {
         onDismiss={bumpSlideshowActivity}
       />
 
-      {setupComplete && phase === 'strip-flash' && photoMode === 'strip' && (
-        <StripFlashScreen completedPose={stripFlashCompleted} />
+      {setupComplete && phase === 'strip-flash' && stripMode && (
+        <StripFlashScreen completedPose={stripFlashCompleted} poseCount={stripPoseCount} />
       )}
 
       {setupComplete && phase === 'countdown' && (
         <CountdownScreen
           countdown={countdown}
           label={appConfig.texts.countdownLabel}
-          poseLabel={
-            photoMode === 'strip' ? `Pose ${stripPose + 1} de ${STRIP_POSE_COUNT}` : null
-          }
+          poseLabel={stripMode ? `Pose ${stripPose + 1} de ${stripPoseCount}` : null}
         />
       )}
 
       {setupComplete && canShowReview && reviewDisplayPhoto && (
         <ReviewScreen
           photo={reviewDisplayPhoto}
-          variant={photoMode === 'strip' ? 'strip' : 'individual'}
+          variant={stripMode ? 'strip' : 'individual'}
           config={appConfig}
           captureSource={
-            photoMode === 'strip'
+            stripMode
               ? null
               : captureMode === 'tethered'
                 ? usedFallback
@@ -880,7 +963,7 @@ function App() {
                   : 'tether'
                 : 'preview'
           }
-          fallbackReason={photoMode === 'strip' ? null : fallbackReason}
+          fallbackReason={stripMode ? null : fallbackReason}
           onRetake={retake}
           onConfirm={() => void confirmPhoto()}
         />

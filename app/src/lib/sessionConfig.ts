@@ -37,9 +37,20 @@ export const SLIDESHOW_MEMORIES_DIR_KEY = 'espejo-fotos:slideshow-memories-dir'
 export const SLIDESHOW_INCLUDE_EVENT_KEY = 'espejo-fotos:slideshow-include-event'
 export const SLIDESHOW_IDLE_ENABLED_KEY = 'espejo-fotos:slideshow-idle-enabled'
 export const SLIDESHOW_IDLE_SECONDS_KEY = 'espejo-fotos:slideshow-idle-seconds'
+export const PRINT_ENABLED_KEY = 'espejo-fotos:print-enabled'
+export const PRINTER_NAME_KEY = 'espejo-fotos:printer-name'
+
+/** Must match electron/printConfig SIMULATE_PRINTER_ID */
+export const SIMULATE_PRINTER_ID = '__fotomirror_simulate__'
+export const DEFAULT_PRINTER_NAME = 'DS-RX1'
 
 function normalizeCaptureMode(value: unknown): CaptureMode {
   return value === 'tethered' ? 'tethered' : 'preview'
+}
+
+function normalizePrinterName(value: unknown): string {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  return DEFAULT_PRINTER_NAME
 }
 
 export function loadSessionConfig(): SessionConfig | null {
@@ -63,6 +74,8 @@ export function loadSessionConfig(): SessionConfig | null {
       slideshowIncludeEventPhotos: Boolean(data.slideshowIncludeEventPhotos),
       slideshowIdleEnabled: data.slideshowIdleEnabled !== false,
       slideshowIdleSeconds: normalizeSlideshowIdleSeconds(data.slideshowIdleSeconds),
+      printEnabled: Boolean(data.printEnabled),
+      printerName: normalizePrinterName(data.printerName),
     }
   } catch {
     return null
@@ -91,6 +104,8 @@ export function saveSessionConfig(config: SessionConfig): void {
     config.slideshowIdleEnabled ? '1' : '0',
   )
   localStorage.setItem(SLIDESHOW_IDLE_SECONDS_KEY, String(config.slideshowIdleSeconds))
+  localStorage.setItem(PRINT_ENABLED_KEY, config.printEnabled ? '1' : '0')
+  localStorage.setItem(PRINTER_NAME_KEY, config.printerName)
   applyAppTheme(config.themeId)
 }
 
@@ -151,6 +166,14 @@ export function loadStoredSlideshowIdleSeconds() {
   return normalizeSlideshowIdleSeconds(
     localStorage.getItem(SLIDESHOW_IDLE_SECONDS_KEY) ?? DEFAULT_SLIDESHOW_IDLE_SECONDS,
   )
+}
+
+export function loadStoredPrintEnabled(): boolean {
+  return localStorage.getItem(PRINT_ENABLED_KEY) === '1'
+}
+
+export function loadStoredPrinterName(): string {
+  return normalizePrinterName(localStorage.getItem(PRINTER_NAME_KEY))
 }
 
 /** Ruta corta para la barra de operador. */

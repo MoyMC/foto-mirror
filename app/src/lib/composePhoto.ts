@@ -2,8 +2,14 @@ import { applyFilterToCanvas } from './filters'
 import { hasEventSign, type EventSignFontId, type EventSignSizeId } from './eventSign'
 import type { FilterPreset } from '../types'
 import { drawNeonSign } from '../components/NeonSign'
+import { cropRect2x3, cropRect3x2, mapSignPercentThroughCrop } from './photoCrop'
+import {
+  DEFAULT_EVENT_SIGN_X,
+  DEFAULT_EVENT_SIGN_Y,
+} from './eventSign'
 import {
   captureRotationFromPreview,
+  mapSignPreviewToPhoto,
   outputSizeForRotation,
   type PreviewRotation,
 } from './orientation'
@@ -67,17 +73,26 @@ export async function composePhoto(
     ? outputSizeForRotation(srcW, srcH, rotation)
     : { width: srcW, height: srcH }
 
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
+  const portraitPrint = previewRotation === 90 || previewRotation === 270
+  const fullCrop = portraitPrint ? cropRect2x3(width, height) : cropRect3x2(width, height)
+
+  let canvas = document.createElement('canvas')
+  canvas.width = fullCrop.width
+  canvas.height = fullCrop.height
   const ctx = canvas.getContext('2d')
   if (!ctx) return basePhoto
 
+  const tempCanvas = document.createElement('canvas')
+  tempCanvas.width = width
+  tempCanvas.height = height
+  const tempCtx = tempCanvas.getContext('2d')
+  if (!tempCtx) return basePhoto
+
   if (needsFilter && filter) {
-    applyFilterToCanvas(ctx, base, srcW, srcH, filter, rotation)
+    applyFilterToCanvas(tempCtx, base, srcW, srcH, filter, rotation)
   } else if (needsOrientationPass) {
     applyFilterToCanvas(
-      ctx,
+      tempCtx,
       base,
       srcW,
       srcH,
@@ -85,32 +100,51 @@ export async function composePhoto(
       rotation,
     )
   } else {
-    ctx.drawImage(base, 0, 0, width, height)
+    tempCtx.drawImage(base, 0, 0, width, height)
   }
 
+  ctx.drawImage(
+    tempCanvas,
+    fullCrop.left,
+    fullCrop.top,
+    fullCrop.width,
+    fullCrop.height,
+    0,
+    0,
+    fullCrop.width,
+    fullCrop.height,
+  )
+
   if (needsSign) {
+    const mapped = mapSignPreviewToPhoto(
+      signX ?? DEFAULT_EVENT_SIGN_X,
+      signY ?? DEFAULT_EVENT_SIGN_Y,
+      previewRotation,
+    )
+    const onCrop = mapSignPercentThroughCrop(mapped.x, mapped.y, width, height, fullCrop)
     drawNeonSign(
       ctx,
       signText,
-      width,
-      height,
+      fullCrop.width,
+      fullCrop.height,
       neonColor,
-      signX,
-      signY,
+      onCrop.x,
+      onCrop.y,
       signFontId,
       signSizeId,
       previewRotation,
+      true,
     )
   }
 
   if (logoUrl) {
     const logo = await loadImage(logoUrl)
-    const logoMaxW = width * 0.18
+    const logoMaxW = fullCrop.width * 0.18
     const scale = logoMaxW / logo.width
     const logoW = logo.width * scale
     const logoH = logo.height * scale
-    const padding = width * 0.03
-    ctx.drawImage(logo, width - logoW - padding, padding, logoW, logoH)
+    const padding = fullCrop.width * 0.03
+    ctx.drawImage(logo, fullCrop.width - logoW - padding, padding, logoW, logoH)
   }
 
   return canvas.toDataURL('image/jpeg', jpegQuality)

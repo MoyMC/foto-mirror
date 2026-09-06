@@ -1,3 +1,7 @@
+import { loadAppEnv } from './loadEnv'
+
+loadAppEnv()
+
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs/promises'
@@ -16,6 +20,21 @@ import {
 } from './eventsServer'
 import { listImageFilesInDir } from './slideshowBridge'
 import { captureTethered, disconnectTether, getTetherStatus } from './tetherBridge'
+import {
+  closeEventRegistry,
+  getEventRegistry,
+  openEventRegistry,
+  photoIdFromFilename,
+} from './eventRegistry'
+import { startPrintWorker, stopPrintWorker } from './printWorker'
+import { getPrinters } from 'pdf-to-printer'
+import {
+  getPrintSettings,
+  setPrintSettings,
+  SIMULATE_PRINTER_ID,
+  SIMULATE_PRINTER_LABEL,
+  type PrintRuntimeSettings,
+} from './printConfig'
 
 const isDev = !app.isPackaged
 
@@ -66,6 +85,10 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   void disconnectTether()
+  const registry = getEventRegistry()
+  if (registry) registry.closeSession()
+  stopPrintWorker()
+  closeEventRegistry()
   stopPhotoServer()
   stopEventsServer()
   if (process.platform !== 'darwin') app.quit()
@@ -114,8 +137,35 @@ ipcMain.handle('get-eventos-base-url', () => {
 })
 
 ipcMain.handle('start-photo-server', async (_event, photosDir: string) => {
+  const registry = openEventRegistry(photosDir)
+  startPrintWorker(registry)
   return startPhotoServer(photosDir)
 })
+
+ipcMain.handle('list-printers', async () => {
+  try {
+    const printers = await getPrinters()
+    return printers.map((p) => ({
+      name: p.name,
+      isDefault: Boolean((p as { isDefault?: boolean }).isDefault),
+    }))
+  } catch (err) {
+    console.error('[print] list-printers failed:', err)
+    return [] as Array<{ name: string; isDefault: boolean }>
+  }
+})
+
+ipcMain.handle('get-print-settings', () => getPrintSettings())
+
+ipcMain.handle(
+  'set-print-settings',
+  (_event, settings: Partial<PrintRuntimeSettings>) => setPrintSettings(settings ?? {}),
+)
+
+ipcMain.handle('get-simulate-printer', () => ({
+  id: SIMULATE_PRINTER_ID,
+  label: SIMULATE_PRINTER_LABEL,
+}))
 
 ipcMain.handle('get-download-base-url', () => getDownloadBaseUrl())
 
@@ -164,6 +214,16 @@ ipcMain.handle(
       editedDataUrl?: string
       reuseOriginalAsEdited: boolean
       themeId?: string
+      printMeta?: {
+        signText?: string | null
+        signX?: number
+        signY?: number
+        signFontId?: string
+        signSizeId?: string
+        themeId?: string
+        previewRotation?: number
+        needsOrientationPass?: boolean
+      }
     },
   ) => {
     const originalesDir = path.join(input.photosDir, 'originales')
@@ -190,6 +250,26 @@ ipcMain.handle(
       throw new Error('Falta foto editada')
     }
 
+    const photoId = photoIdFromFilename(input.filename)
+    if (photoId) {
+      const registry = getEventRegistry() ?? openEventRegistry(input.photosDir)
+      registry.registerIndividual({
+        photoId,
+        filename: input.filename,
+        printMeta: {
+          originalFilename: input.filename,
+          signText: input.printMeta?.signText ?? null,
+          signX: input.printMeta?.signX ?? null,
+          signY: input.printMeta?.signY ?? null,
+          signFontId: input.printMeta?.signFontId ?? null,
+          signSizeId: input.printMeta?.signSizeId ?? null,
+          themeId: input.printMeta?.themeId ?? input.themeId ?? null,
+          previewRotation: input.printMeta?.previewRotation ?? null,
+          needsOrientationPass: input.printMeta?.needsOrientationPass ?? false,
+        },
+      })
+    }
+
     return {
       filePath: editedPath,
       downloadUrl: buildPhotoDownloadUrl(input.filename, input.themeId),
@@ -204,15 +284,18 @@ ipcMain.handle(
     input: {
       photosDir: string
       stripId: string
+      stripKind: 'strip2' | 'strip3'
       stripDataUrl: string
       poses: Array<{
-        pose: 1 | 2 | 3
+        pose: number
         originalDataUrl?: string
         originalFilePath?: string
         editedDataUrl: string
         reuseOriginalAsEdited: boolean
       }>
       themeId?: string
+      signText?: string | null
+      previewRotation?: number | null
     },
   ) => {
     const originalesDir = path.join(input.photosDir, 'originales')
@@ -220,14 +303,15 @@ ipcMain.handle(
     await fs.mkdir(originalesDir, { recursive: true })
     await fs.mkdir(editadasDir, { recursive: true })
 
-    const poseFilenames: [string, string, string] = [
-      `tira-${input.stripId}-1.jpg`,
-      `tira-${input.stripId}-2.jpg`,
-      `tira-${input.stripId}-3.jpg`,
-    ]
+    const poseCount = input.stripKind === 'strip2' ? 2 : 3
+    const poseFilenames = Array.from(
+      { length: poseCount },
+      (_, i) => `tira-${input.stripId}-${i + 1}.jpg`,
+    )
 
     for (const poseInput of input.poses) {
       const filename = poseFilenames[poseInput.pose - 1]
+      if (!filename) throw new Error(`Pose inválida: ${poseInput.pose}`)
       const originalPath = path.join(originalesDir, filename)
       const editedPath = path.join(editadasDir, filename)
 
@@ -250,19 +334,16 @@ ipcMain.handle(
     const stripPath = path.join(editadasDir, stripFilename)
     await fs.writeFile(stripPath, dataUrlToBuffer(input.stripDataUrl))
 
-    const manifest = {
-      type: 'strip' as const,
-      id: input.stripId,
-      files: {
-        strip: stripFilename,
-        poses: poseFilenames,
-      },
-    }
-    await fs.writeFile(
-      path.join(editadasDir, `tira-${input.stripId}.json`),
-      JSON.stringify(manifest),
-      'utf8',
-    )
+    const registry = getEventRegistry() ?? openEventRegistry(input.photosDir)
+    registry.registerStrip({
+      stripId: input.stripId,
+      stripKind: input.stripKind,
+      stripFilename,
+      poseFilenames,
+      signText: input.signText ?? null,
+      themeId: input.themeId ?? null,
+      previewRotation: input.previewRotation ?? null,
+    })
 
     return {
       filePath: stripPath,
@@ -318,5 +399,9 @@ ipcMain.handle(
 )
 
 ipcMain.handle('quit-app', () => {
+  const registry = getEventRegistry()
+  if (registry) registry.closeSession()
+  stopPrintWorker()
+  closeEventRegistry()
   app.quit()
 })
