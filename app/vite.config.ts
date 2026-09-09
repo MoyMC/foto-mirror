@@ -49,7 +49,7 @@ export default defineConfig({
                 build: {
                   outDir: 'dist-electron',
                   rollupOptions: {
-                    external: ['electron'],
+                    external: ['electron', 'better-sqlite3', 'sharp', 'pdfkit', 'pdf-to-printer', 'dotenv'],
                   },
                 },
               },

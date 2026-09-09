@@ -1,18 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AppPhase, CaptureMode, PhotoMode, StripCaptureFrame, TetherStatus } from './types'
+import type { AppPhase, CaptureMode, PhotoMode, PrinterOption, StripCaptureFrame, TetherStatus } from './types'
 import { appConfig } from './lib/appConfig'
 import { getFilterCss, resolveFilters } from './lib/filters'
 import { useFilterThumbnails } from './hooks/useFilterThumbnails'
 import {
   captureModeLabel,
+  DEFAULT_PRINTER_NAME,
   loadStoredCaptureMode,
   loadStoredEventSignFontId,
   loadStoredEventSignSizeId,
   loadStoredEventSignText,
   loadStoredEventSignX,
   loadStoredEventSignY,
+  loadStoredOverlayMode,
+  loadStoredOverlayScale,
   loadStoredPhotosDir,
   loadStoredPreviewRotation,
+  loadStoredPrintEnabled,
+  loadStoredPrinterName,
+  loadStoredSlideshowAudioEnabled,
   loadStoredSlideshowIdleEnabled,
   loadStoredSlideshowIdleSeconds,
   loadStoredSlideshowIncludeEventPhotos,
@@ -20,12 +26,19 @@ import {
   loadStoredThemeId,
   saveSessionConfig,
   shortPath,
+  SIMULATE_PRINTER_ID,
 } from './lib/sessionConfig'
 import { constrainEventSignInput, hasEventSign, normalizeEventSign } from './lib/eventSign'
+import {
+  clampOverlayScale,
+  hasActiveOverlay,
+  normalizeOverlayMode,
+  type OverlayMode,
+} from './lib/overlay'
 import { normalizeSlideshowIdleSeconds } from './lib/slideshow'
 import { composePhoto } from './lib/composePhoto'
 import { composePhotoStrip } from './lib/stripCompositor'
-import { createStripId, STRIP_FLASH_MS, STRIP_POSE_COUNT } from './lib/photoMode'
+import { createStripId, isStripMode, poseCountForMode, STRIP_FLASH_MS } from './lib/photoMode'
 import { type PreviewRotation } from './lib/orientation'
 import { applyAppTheme, themeNeonColor, type AppThemeId } from './lib/themes'
 import { pickDefaultDeviceId, useCamera } from './hooks/useCamera'
@@ -34,6 +47,7 @@ import { useSlideshowImages } from './hooks/useSlideshowImages'
 import { useIdleSlideshow } from './hooks/useIdleSlideshow'
 import { CameraPreview } from './components/CameraPreview'
 import { NeonSign } from './components/NeonSign'
+import { PngOverlay } from './components/PngOverlay'
 import { IdleSlideshow } from './components/IdleSlideshow'
 import { SetupWizard } from './components/SetupWizard'
 import { COUNTDOWN_OPTIONS, IdleScreen } from './components/IdleScreen'
@@ -47,7 +61,7 @@ import './App.css'
 const OPERATOR_UNLOCK_MS = 90_000
 
 function App() {
-  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4 | 5>(1)
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1)
   const [setupComplete, setSetupComplete] = useState(false)
   const [photosDir, setPhotosDir] = useState<string | null>(null)
   const [captureMode, setCaptureMode] = useState<CaptureMode>('preview')
@@ -60,6 +74,9 @@ function App() {
   const [eventSignY, setEventSignY] = useState(() => loadStoredEventSignY())
   const [eventSignFontId, setEventSignFontId] = useState(() => loadStoredEventSignFontId())
   const [eventSignSizeId, setEventSignSizeId] = useState(() => loadStoredEventSignSizeId())
+  const [overlayMode, setOverlayMode] = useState<OverlayMode>(() => loadStoredOverlayMode())
+  const [overlayScale, setOverlayScale] = useState(() => loadStoredOverlayScale())
+  const [overlayPngUrl, setOverlayPngUrl] = useState<string | null>(null)
   const [slideshowMemoriesDir, setSlideshowMemoriesDir] = useState<string | null>(() =>
     loadStoredSlideshowMemoriesDir(),
   )
@@ -72,6 +89,14 @@ function App() {
   const [slideshowIdleSeconds, setSlideshowIdleSeconds] = useState(() =>
     loadStoredSlideshowIdleSeconds(),
   )
+  const [slideshowAudioEnabled, setSlideshowAudioEnabled] = useState(() =>
+    loadStoredSlideshowAudioEnabled(),
+  )
+  const [printEnabled, setPrintEnabled] = useState(() => loadStoredPrintEnabled())
+  const [printerName, setPrinterName] = useState(() => loadStoredPrinterName())
+  const [printers, setPrinters] = useState<PrinterOption[]>([])
+  const [printersLoading, setPrintersLoading] = useState(false)
+  const [simulatePrinterLabel, setSimulatePrinterLabel] = useState('Simulación (no imprime)')
   const [slideshowRefreshKey, setSlideshowRefreshKey] = useState(0)
   const [tetherStatus, setTetherStatus] = useState<TetherStatus | null>(null)
   const [tetherChecking, setTetherChecking] = useState(false)
@@ -115,6 +140,9 @@ function App() {
   const capturingRef = useRef(false)
   const unlockTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const stripPoseCount = poseCountForMode(photoMode)
+  const stripMode = isStripMode(photoMode)
+
   const electronAvailable = Boolean(window.electronAPI)
 
   const {
@@ -140,12 +168,14 @@ function App() {
       memoriesDir: slideshowMemoriesDir,
       includeEventPhotos: slideshowIncludeEventPhotos,
       idleSeconds: slideshowIdleSeconds,
+      audioEnabled: slideshowAudioEnabled,
     }),
     [
       slideshowIdleEnabled,
       slideshowMemoriesDir,
       slideshowIncludeEventPhotos,
       slideshowIdleSeconds,
+      slideshowAudioEnabled,
     ],
   )
 
@@ -164,7 +194,9 @@ function App() {
     displayMode: slideshowDisplayMode,
     current: slideshowCurrent,
     fade: slideshowFade,
+    audioEnabled: slideshowAudioOn,
     bumpActivity: bumpSlideshowActivity,
+    advanceSlide: advanceSlideshow,
   } = useIdleSlideshow({
     active: setupComplete && phase === 'idle' && !error,
     config: slideshowConfig,
@@ -189,6 +221,9 @@ function App() {
       signY: eventSignY,
       signFontId: eventSignFontId,
       signSizeId: eventSignSizeId,
+      overlayMode,
+      overlayPngUrl,
+      overlayScale,
       previewRotation,
     }),
     [
@@ -198,9 +233,26 @@ function App() {
       eventSignY,
       eventSignFontId,
       eventSignSizeId,
+      overlayMode,
+      overlayPngUrl,
+      overlayScale,
       previewRotation,
     ],
   )
+
+  const overlayActive = hasActiveOverlay(overlayMode, {
+    hasText: hasEventSign(eventSignText),
+    hasPng: Boolean(overlayPngUrl),
+  })
+
+  const effectiveOverlayMode: OverlayMode =
+    overlayMode === 'png' && overlayPngUrl
+      ? 'png'
+      : overlayMode === 'text' && hasEventSign(eventSignText)
+        ? 'text'
+        : overlayMode === 'png' || overlayMode === 'text'
+          ? overlayMode
+          : 'none'
 
   const composedPhoto = usePhotoCompositor(
     photoMode === 'individual' ? rawPhoto : null,
@@ -218,17 +270,23 @@ function App() {
           const needsOrientation = Boolean(frame.tetherSourcePath) && !frame.usedFallback
           return composePhoto(frame.rawPhoto, filter, {
             ...composeOverlay,
+            // Strip frame text is separate; bake PNG into cells when in png mode.
+            signText: '',
+            overlayMode: overlayMode === 'png' ? 'png' : 'none',
             needsOrientationPass: needsOrientation,
           })
         }),
       )
-      const strip = await composePhotoStrip(cells)
+      const portraitStrip = previewRotation === 90 || previewRotation === 270
+      const strip = await composePhotoStrip(cells, {
+        cellAspect: portraitStrip ? 2 / 3 : 3 / 2,
+      })
       setStripComposedCells(cells)
       setStripFrames(frames)
       setReviewPhoto(strip)
       setPhase('review')
     },
-    [composeOverlay, filters, stripFilterIds],
+    [composeOverlay, filters, stripFilterIds, previewRotation, overlayMode],
   )
 
   const clearStripTetherFiles = useCallback((frames: StripCaptureFrame[]) => {
@@ -339,6 +397,79 @@ function App() {
     void refreshTetherStatus()
   }, [wizardStep, setupComplete, refreshTetherStatus])
 
+  const refreshPrinters = useCallback(async () => {
+    if (!window.electronAPI?.listPrinters) {
+      setPrinters([])
+      return
+    }
+    setPrintersLoading(true)
+    try {
+      const [list, simulate] = await Promise.all([
+        window.electronAPI.listPrinters(),
+        window.electronAPI.getSimulatePrinter?.() ??
+          Promise.resolve({ id: SIMULATE_PRINTER_ID, label: 'Simulación (no imprime)' }),
+      ])
+      setPrinters(list)
+      setSimulatePrinterLabel(simulate.label)
+      setPrinterName((current) => {
+        if (current === SIMULATE_PRINTER_ID || current === simulate.id) return simulate.id
+        if (list.some((p) => p.name === current)) return current
+        const preferred =
+          list.find((p) => p.name === DEFAULT_PRINTER_NAME) ??
+          list.find((p) => p.isDefault) ??
+          list[0]
+        return preferred?.name ?? SIMULATE_PRINTER_ID
+      })
+    } catch {
+      setPrinters([])
+    } finally {
+      setPrintersLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (wizardStep !== 6 || setupComplete) return
+    void refreshPrinters()
+  }, [wizardStep, setupComplete, refreshPrinters])
+
+  const refreshOverlayPng = useCallback(async () => {
+    if (!window.electronAPI?.getOverlayPngDataUrl || !photosDir) {
+      setOverlayPngUrl(null)
+      return
+    }
+    try {
+      const dataUrl = await window.electronAPI.getOverlayPngDataUrl(photosDir)
+      setOverlayPngUrl(dataUrl)
+    } catch {
+      setOverlayPngUrl(null)
+    }
+  }, [photosDir])
+
+  useEffect(() => {
+    void refreshOverlayPng()
+  }, [refreshOverlayPng])
+
+  const handlePickOverlayPng = useCallback(async () => {
+    if (!window.electronAPI?.selectOverlayPng || !photosDir) return
+    const source = await window.electronAPI.selectOverlayPng()
+    if (!source) return
+    await window.electronAPI.installOverlayPng(photosDir, source)
+    setOverlayMode('png')
+    await refreshOverlayPng()
+  }, [photosDir, refreshOverlayPng])
+
+  const handleClearOverlayPng = useCallback(async () => {
+    if (!window.electronAPI?.clearOverlayPng || !photosDir) return
+    await window.electronAPI.clearOverlayPng(photosDir)
+    setOverlayPngUrl(null)
+    setOverlayMode('none')
+  }, [photosDir])
+
+  const handleOverlayModeChange = useCallback((mode: OverlayMode) => {
+    const next = normalizeOverlayMode(mode)
+    setOverlayMode(next === 'none' ? 'text' : next)
+  }, [])
+
   const handleThemeChange = (id: AppThemeId) => {
     setThemeId(id)
     applyAppTheme(id)
@@ -404,7 +535,7 @@ function App() {
         return
       }
 
-      if (photoMode === 'strip') {
+      if (stripMode) {
         const frame: StripCaptureFrame = {
           rawPhoto: result.photo,
           tetherSourcePath: result.tetherFilePath ?? null,
@@ -414,7 +545,7 @@ function App() {
         const nextFrames = [...stripFramesRef.current, frame]
         stripFramesRef.current = nextFrames
 
-        if (nextFrames.length < STRIP_POSE_COUNT) {
+        if (nextFrames.length < stripPoseCount) {
           setStripPose(nextFrames.length)
           setStripFlashCompleted(nextFrames.length)
           setPhase('strip-flash')
@@ -443,6 +574,8 @@ function App() {
     countdownSeconds,
     takePhoto,
     photoMode,
+    stripMode,
+    stripPoseCount,
     finishStripSession,
   ])
 
@@ -518,10 +651,15 @@ function App() {
         eventSignY,
         eventSignFontId,
         eventSignSizeId,
+        overlayMode: effectiveOverlayMode === 'none' ? overlayMode : effectiveOverlayMode,
+        overlayScale: clampOverlayScale(overlayScale),
         slideshowMemoriesDir,
         slideshowIncludeEventPhotos,
         slideshowIdleEnabled,
         slideshowIdleSeconds,
+        slideshowAudioEnabled,
+        printEnabled,
+        printerName,
       })
     }
 
@@ -529,6 +667,10 @@ function App() {
     setEventSignText(normalizeEventSign(eventSignText))
 
     if (window.electronAPI && photosDir) {
+      await window.electronAPI.setPrintSettings?.({
+        enabled: printEnabled,
+        printerName,
+      })
       await window.electronAPI.startPhotoServer(photosDir)
       await window.electronAPI.setSlideshowMemoriesDir(slideshowMemoriesDir)
     }
@@ -569,7 +711,7 @@ function App() {
 
   const startCountdown = () => {
     if (!isReady) return
-    if (photoMode === 'strip') {
+    if (stripMode) {
       stripFramesRef.current = []
       setStripFrames([])
       setStripComposedCells([])
@@ -582,7 +724,7 @@ function App() {
   }
 
   const retake = () => {
-    if (photoMode === 'strip') {
+    if (stripMode) {
       clearStripTetherFiles(stripFrames)
       stripFramesRef.current = []
       setStripFrames([])
@@ -607,17 +749,18 @@ function App() {
     const individualPhoto = composedPhoto
     const stripPhoto = reviewPhoto
 
-    if (photoMode === 'strip') {
-      if (!stripPhoto || stripFrames.length !== STRIP_POSE_COUNT || !stripId || !photosDir) return
+    if (stripMode) {
+      if (!stripPhoto || stripFrames.length !== stripPoseCount || !stripId || !photosDir) return
       if (!window.electronAPI?.saveStripPhotos) return
 
       const poses = stripFrames.map((frame, index) => {
         const keepNative = Boolean(frame.tetherSourcePath) && !frame.usedFallback
-        const needsEdit =
-          hasEventSign(eventSignText) || stripFilterIds[index] !== 'normal' || keepNative
+        // Always persist composed cells (orientation + filter) so print matches the web crop UI.
+        const hasComposed = Boolean(stripComposedCells[index])
+        const needsEdit = hasComposed || stripFilterIds[index] !== 'normal' || keepNative
 
         return {
-          pose: (index + 1) as 1 | 2 | 3,
+          pose: index + 1,
           originalFilePath: keepNative ? frame.tetherSourcePath! : undefined,
           originalDataUrl: keepNative ? undefined : frame.rawPhoto,
           editedDataUrl: stripComposedCells[index] ?? frame.rawPhoto,
@@ -628,9 +771,15 @@ function App() {
       const result = await window.electronAPI.saveStripPhotos({
         photosDir,
         stripId,
+        stripKind: photoMode === 'strip2' ? 'strip2' : 'strip3',
         stripDataUrl: stripPhoto,
         poses,
         themeId,
+        signText:
+          overlayMode === 'text' && hasEventSign(eventSignText)
+            ? normalizeEventSign(eventSignText)
+            : null,
+        previewRotation,
       })
 
       for (const frame of stripFrames) {
@@ -654,7 +803,8 @@ function App() {
 
     const filename = `foto-${Date.now()}.jpg`
     const keepNative = Boolean(tetherSourcePath) && !usedFallback
-    const needsEdit = hasEventSign(eventSignText) || activeFilterId !== 'normal'
+    const needsEdit =
+      overlayActive || activeFilterId !== 'normal'
 
     if (window.electronAPI?.saveEventPhotos && photosDir) {
       const result = await window.electronAPI.saveEventPhotos({
@@ -665,6 +815,21 @@ function App() {
         editedDataUrl: needsEdit ? composedPhoto : undefined,
         reuseOriginalAsEdited: !needsEdit,
         themeId,
+        printMeta: {
+          signText:
+            overlayMode === 'text' && hasEventSign(eventSignText)
+              ? normalizeEventSign(eventSignText)
+              : null,
+          signX: eventSignX,
+          signY: eventSignY,
+          signFontId: eventSignFontId,
+          signSizeId: eventSignSizeId,
+          themeId,
+          previewRotation,
+          needsOrientationPass: keepNative,
+          overlayMode: effectiveOverlayMode,
+          overlayScale: clampOverlayScale(overlayScale),
+        },
       })
 
       if (tetherSourcePath && !keepNative && window.electronAPI.deletePhotoFile) {
@@ -698,7 +863,7 @@ function App() {
   const previewFilter =
     photoMode === 'individual' && activeFilter ? getFilterCss(activeFilter) : 'none'
 
-  const reviewDisplayPhoto = photoMode === 'strip' ? reviewPhoto : composedPhoto
+  const reviewDisplayPhoto = stripMode ? reviewPhoto : composedPhoto
   const canShowReview = Boolean(reviewDisplayPhoto) && phase === 'review'
 
   return (
@@ -713,7 +878,7 @@ function App() {
         }
       />
 
-      {hasEventSign(eventSignText) &&
+      {overlayActive &&
         !fullscreenSlideshow &&
         ((setupComplete && phase === 'idle') || (!setupComplete && wizardStep === 5)) && (
           <>
@@ -721,6 +886,7 @@ function App() {
               <div
                 className="neon-sign-stage"
                 onPointerDown={(e) => {
+                  if ((e.target as HTMLElement).closest('.neon-sign, .png-overlay')) return
                   e.currentTarget.setPointerCapture(e.pointerId)
                   const nx = (e.clientX / window.innerWidth) * 100
                   const ny = (e.clientY / window.innerHeight) * 100
@@ -734,18 +900,35 @@ function App() {
                 }}
               />
             )}
-            <NeonSign
-              text={eventSignText}
-              x={eventSignX}
-              y={eventSignY}
-              fontId={eventSignFontId}
-              sizeId={eventSignSizeId}
-              draggable={!setupComplete}
-              onPositionChange={(x, y) => {
-                setEventSignX(x)
-                setEventSignY(y)
-              }}
-            />
+            {overlayMode === 'png' && overlayPngUrl ? (
+              <PngOverlay
+                src={overlayPngUrl}
+                x={eventSignX}
+                y={eventSignY}
+                scale={overlayScale}
+                className="png-overlay--live"
+                draggable={!setupComplete}
+                onPositionChange={(x, y) => {
+                  setEventSignX(x)
+                  setEventSignY(y)
+                }}
+                onScaleChange={(s) => setOverlayScale(clampOverlayScale(s))}
+              />
+            ) : (
+              <NeonSign
+                text={eventSignText}
+                x={eventSignX}
+                y={eventSignY}
+                fontId={eventSignFontId}
+                sizeId={eventSignSizeId}
+                className="neon-sign--live"
+                draggable={!setupComplete}
+                onPositionChange={(x, y) => {
+                  setEventSignX(x)
+                  setEventSignY(y)
+                }}
+              />
+            )}
           </>
         )}
 
@@ -766,6 +949,9 @@ function App() {
           eventSignText={eventSignText}
           eventSignFontId={eventSignFontId}
           eventSignSizeId={eventSignSizeId}
+          overlayMode={overlayMode === 'none' ? 'text' : overlayMode}
+          overlayScale={overlayScale}
+          overlayPngReady={Boolean(overlayPngUrl)}
           tetherStatus={tetherStatus}
           tetherChecking={tetherChecking}
           testMessage={testMessage}
@@ -777,10 +963,17 @@ function App() {
           onSlideshowIdleSecondsChange={(sec) =>
             setSlideshowIdleSeconds(normalizeSlideshowIdleSeconds(sec))
           }
+          onSlideshowAudioEnabledChange={setSlideshowAudioEnabled}
           slideshowMemoriesDir={slideshowMemoriesDir}
           slideshowIncludeEventPhotos={slideshowIncludeEventPhotos}
           slideshowIdleEnabled={slideshowIdleEnabled}
           slideshowIdleSeconds={slideshowIdleSeconds}
+          slideshowAudioEnabled={slideshowAudioEnabled}
+          printEnabled={printEnabled}
+          printerName={printerName}
+          printers={printers}
+          printersLoading={printersLoading}
+          simulatePrinterLabel={simulatePrinterLabel}
           onCameraSelect={setSelectedCameraId}
           onCameraRefresh={() => {
             refreshCameras()
@@ -789,18 +982,32 @@ function App() {
           onCaptureModeChange={handleCaptureModeChange}
           onThemeChange={handleThemeChange}
           onPreviewRotationChange={setPreviewRotation}
-          onEventSignChange={(text) => setEventSignText(constrainEventSignInput(text))}
+          onEventSignChange={(text) => {
+            setEventSignText(constrainEventSignInput(text))
+            setOverlayMode('text')
+          }}
           onEventSignFontChange={setEventSignFontId}
           onEventSignSizeChange={setEventSignSizeId}
           onSignPreset={(x, y) => {
             setEventSignX(x)
             setEventSignY(y)
           }}
+          onOverlayModeChange={handleOverlayModeChange}
+          onOverlayScaleChange={(s) => setOverlayScale(clampOverlayScale(s))}
+          onPickOverlayPng={() => void handlePickOverlayPng()}
+          onClearOverlayPng={() => void handleClearOverlayPng()}
+          onPrintEnabledChange={setPrintEnabled}
+          onPrinterNameChange={setPrinterName}
+          onRefreshPrinters={() => void refreshPrinters()}
           onGoToStep={setWizardStep}
           onCheckTether={() => void refreshTetherStatus()}
           onTestCapture={() => void handleTestCapture()}
-          onBack={() => setWizardStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3 | 4 | 5) : 1))}
-          onNext={() => setWizardStep((s) => (s < 5 ? ((s + 1) as 1 | 2 | 3 | 4 | 5) : 5))}
+          onBack={() =>
+            setWizardStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3 | 4 | 5 | 6) : 1))
+          }
+          onNext={() =>
+            setWizardStep((s) => (s < 6 ? ((s + 1) as 1 | 2 | 3 | 4 | 5 | 6) : 6))
+          }
           onConfirm={() => void handleWizardConfirm()}
           onReconnect={reconnect}
         />
@@ -847,32 +1054,32 @@ function App() {
       <IdleSlideshow
         visible={slideshowVisible}
         displayMode={slideshowDisplayMode}
-        imageUrl={slideshowCurrent?.url ?? null}
+        item={slideshowCurrent}
         faded={slideshowFade}
+        audioEnabled={slideshowAudioOn}
         onDismiss={bumpSlideshowActivity}
+        onMediaEnded={advanceSlideshow}
       />
 
-      {setupComplete && phase === 'strip-flash' && photoMode === 'strip' && (
-        <StripFlashScreen completedPose={stripFlashCompleted} />
+      {setupComplete && phase === 'strip-flash' && stripMode && (
+        <StripFlashScreen completedPose={stripFlashCompleted} poseCount={stripPoseCount} />
       )}
 
       {setupComplete && phase === 'countdown' && (
         <CountdownScreen
           countdown={countdown}
           label={appConfig.texts.countdownLabel}
-          poseLabel={
-            photoMode === 'strip' ? `Pose ${stripPose + 1} de ${STRIP_POSE_COUNT}` : null
-          }
+          poseLabel={stripMode ? `Pose ${stripPose + 1} de ${stripPoseCount}` : null}
         />
       )}
 
       {setupComplete && canShowReview && reviewDisplayPhoto && (
         <ReviewScreen
           photo={reviewDisplayPhoto}
-          variant={photoMode === 'strip' ? 'strip' : 'individual'}
+          variant={stripMode ? 'strip' : 'individual'}
           config={appConfig}
           captureSource={
-            photoMode === 'strip'
+            stripMode
               ? null
               : captureMode === 'tethered'
                 ? usedFallback
@@ -880,7 +1087,7 @@ function App() {
                   : 'tether'
                 : 'preview'
           }
-          fallbackReason={photoMode === 'strip' ? null : fallbackReason}
+          fallbackReason={stripMode ? null : fallbackReason}
           onRetake={retake}
           onConfirm={() => void confirmPhoto()}
         />

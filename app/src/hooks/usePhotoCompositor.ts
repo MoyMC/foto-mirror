@@ -3,10 +3,14 @@ import { composePhoto, type ComposePhotoOptions } from '../lib/composePhoto'
 import type { FilterPreset } from '../types'
 import type { PreviewRotation } from '../lib/orientation'
 import type { EventSignFontId, EventSignSizeId } from '../lib/eventSign'
+import type { OverlayMode } from '../lib/overlay'
 
 interface OverlayAssets extends ComposePhotoOptions {
   signFontId?: EventSignFontId
   signSizeId?: EventSignSizeId
+  overlayMode?: OverlayMode
+  overlayPngUrl?: string | null
+  overlayScale?: number
 }
 
 export function usePhotoCompositor(
@@ -19,6 +23,9 @@ export function usePhotoCompositor(
     signY,
     signFontId,
     signSizeId,
+    overlayMode = 'none',
+    overlayPngUrl = null,
+    overlayScale,
   }: OverlayAssets,
   filter?: FilterPreset | null,
   previewRotation: PreviewRotation = 90,
@@ -44,6 +51,9 @@ export function usePhotoCompositor(
         signY,
         signFontId,
         signSizeId,
+        overlayMode,
+        overlayPngUrl,
+        overlayScale,
         previewRotation,
         needsOrientationPass,
         jpegQuality,
@@ -54,6 +64,7 @@ export function usePhotoCompositor(
     }
   }, [
     basePhoto,
+    filter,
     logoUrl,
     signText,
     neonColor,
@@ -61,7 +72,9 @@ export function usePhotoCompositor(
     signY,
     signFontId,
     signSizeId,
-    filter,
+    overlayMode,
+    overlayPngUrl,
+    overlayScale,
     previewRotation,
     needsOrientationPass,
     jpegQuality,

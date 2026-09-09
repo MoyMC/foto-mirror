@@ -1,11 +1,12 @@
 import type { EventSignFontId, EventSignSizeId } from './lib/eventSign'
+import type { OverlayMode } from './lib/overlay'
 import type { SlideshowIdleSeconds } from './lib/slideshow'
 import type { AppThemeId } from './lib/themes'
 import type { PreviewRotation } from './lib/orientation'
 
 export type AppPhase = 'idle' | 'countdown' | 'strip-flash' | 'review' | 'share'
 
-export type PhotoMode = 'individual' | 'strip'
+export type PhotoMode = 'individual' | 'strip2' | 'strip3'
 
 export interface StripCaptureFrame {
   rawPhoto: string
@@ -15,7 +16,7 @@ export interface StripCaptureFrame {
 }
 
 export interface StripPoseSaveInput {
-  pose: 1 | 2 | 3
+  pose: number
   originalDataUrl?: string
   originalFilePath?: string
   editedDataUrl: string
@@ -25,18 +26,24 @@ export interface StripPoseSaveInput {
 export interface SaveStripPhotosInput {
   photosDir: string
   stripId: string
+  stripKind: 'strip2' | 'strip3'
   stripDataUrl: string
   poses: StripPoseSaveInput[]
   themeId?: string
+  signText?: string | null
+  previewRotation?: number | null
 }
 
 export interface StripManifest {
   type: 'strip'
   id: string
+  stripKind: 'strip2' | 'strip3'
   files: {
     strip: string
-    poses: [string, string, string]
+    poses: string[]
   }
+  signText?: string | null
+  themeId?: string | null
 }
 
 /** Cómo se toma la foto final tras el countdown. */
@@ -55,10 +62,26 @@ export interface SessionConfig {
   eventSignY: number
   eventSignFontId: EventSignFontId
   eventSignSizeId: EventSignSizeId
+  overlayMode: OverlayMode
+  overlayScale: number
   slideshowMemoriesDir: string | null
   slideshowIncludeEventPhotos: boolean
   slideshowIdleEnabled: boolean
   slideshowIdleSeconds: SlideshowIdleSeconds
+  slideshowAudioEnabled: boolean
+  printEnabled: boolean
+  /** Windows printer queue, or simulate sentinel from main. */
+  printerName: string
+}
+
+export interface PrinterOption {
+  name: string
+  isDefault: boolean
+}
+
+export interface PrintSettings {
+  enabled: boolean
+  printerName: string
 }
 
 export interface TetherStatus {
@@ -128,6 +151,18 @@ export interface SaveEventPhotosInput {
   editedDataUrl?: string
   reuseOriginalAsEdited: boolean
   themeId?: string
+  printMeta?: {
+    signText?: string | null
+    signX?: number
+    signY?: number
+    signFontId?: string
+    signSizeId?: string
+    themeId?: string
+    previewRotation?: number
+    needsOrientationPass?: boolean
+    overlayMode?: 'none' | 'text' | 'png'
+    overlayScale?: number
+  }
 }
 
 export interface ElectronAPI {
@@ -157,6 +192,15 @@ export interface ElectronAPI {
   deletePhotoFile: (filePath: string) => Promise<{ ok: boolean }>
   tetherStatus: () => Promise<TetherStatus>
   tetherCapture: (photosDir: string, timeoutMs?: number) => Promise<TetherCaptureResult>
+  listPrinters: () => Promise<PrinterOption[]>
+  getPrintSettings: () => Promise<PrintSettings>
+  setPrintSettings: (settings: Partial<PrintSettings>) => Promise<PrintSettings>
+  getSimulatePrinter: () => Promise<{ id: string; label: string }>
+  selectOverlayPng: () => Promise<string | null>
+  installOverlayPng: (photosDir: string, sourcePath: string) => Promise<string>
+  clearOverlayPng: (photosDir: string) => Promise<void>
+  getOverlayPngPath: (photosDir: string) => Promise<string | null>
+  getOverlayPngDataUrl: (photosDir: string) => Promise<string | null>
   openExternal: (url: string) => Promise<void>
   quitApp: () => Promise<void>
 }

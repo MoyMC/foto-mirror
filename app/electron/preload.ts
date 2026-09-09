@@ -28,6 +28,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     editedDataUrl?: string
     reuseOriginalAsEdited: boolean
     themeId?: string
+    printMeta?: {
+      signText?: string | null
+      signX?: number
+      signY?: number
+      signFontId?: string
+      signSizeId?: string
+      themeId?: string
+      previewRotation?: number
+      needsOrientationPass?: boolean
+      overlayMode?: 'none' | 'text' | 'png'
+      overlayScale?: number
+    }
   }) =>
     ipcRenderer.invoke('save-event-photos', input) as Promise<{
       filePath: string
@@ -36,15 +48,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveStripPhotos: (input: {
     photosDir: string
     stripId: string
+    stripKind: 'strip2' | 'strip3'
     stripDataUrl: string
     poses: Array<{
-      pose: 1 | 2 | 3
+      pose: number
       originalDataUrl?: string
       originalFilePath?: string
       editedDataUrl: string
       reuseOriginalAsEdited: boolean
     }>
     themeId?: string
+    signText?: string | null
+    previewRotation?: number | null
   }) =>
     ipcRenderer.invoke('save-strip-photos', input) as Promise<{
       filePath: string
@@ -76,6 +91,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
       dataUrl?: string
       error?: string
     }>,
+  listPrinters: () =>
+    ipcRenderer.invoke('list-printers') as Promise<Array<{ name: string; isDefault: boolean }>>,
+  getPrintSettings: () =>
+    ipcRenderer.invoke('get-print-settings') as Promise<{
+      enabled: boolean
+      printerName: string
+    }>,
+  setPrintSettings: (settings: { enabled?: boolean; printerName?: string }) =>
+    ipcRenderer.invoke('set-print-settings', settings) as Promise<{
+      enabled: boolean
+      printerName: string
+    }>,
+  getSimulatePrinter: () =>
+    ipcRenderer.invoke('get-simulate-printer') as Promise<{ id: string; label: string }>,
+  selectOverlayPng: () => ipcRenderer.invoke('select-overlay-png') as Promise<string | null>,
+  installOverlayPng: (photosDir: string, sourcePath: string) =>
+    ipcRenderer.invoke('install-overlay-png', photosDir, sourcePath) as Promise<string>,
+  clearOverlayPng: (photosDir: string) =>
+    ipcRenderer.invoke('clear-overlay-png', photosDir) as Promise<void>,
+  getOverlayPngPath: (photosDir: string) =>
+    ipcRenderer.invoke('get-overlay-png-path', photosDir) as Promise<string | null>,
+  getOverlayPngDataUrl: (photosDir: string) =>
+    ipcRenderer.invoke('get-overlay-png-data-url', photosDir) as Promise<string | null>,
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   quitApp: () => ipcRenderer.invoke('quit-app'),
 })

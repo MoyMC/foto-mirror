@@ -1,5 +1,11 @@
 import type { CSSProperties } from 'react'
-import type { CaptureMode, PreviewRotation, TetherStatus, VideoInputDevice } from '../types'
+import type {
+  CaptureMode,
+  PreviewRotation,
+  PrinterOption,
+  TetherStatus,
+  VideoInputDevice,
+} from '../types'
 import {
   EVENT_SIGN_FONTS,
   EVENT_SIGN_MAX_CHARS,
@@ -8,12 +14,21 @@ import {
   type EventSignSizeId,
 } from '../lib/eventSign'
 import { PREVIEW_ROTATIONS } from '../lib/orientation'
+import { SIMULATE_PRINTER_ID } from '../lib/sessionConfig'
+import {
+  clampOverlayScale,
+  DEFAULT_OVERLAY_SCALE,
+  MAX_OVERLAY_SCALE,
+  MIN_OVERLAY_SCALE,
+  type OverlayMode,
+} from '../lib/overlay'
 import { APP_THEMES, type AppThemeId } from '../lib/themes'
 import { CameraSelector } from './CameraSelector'
 import { FolderSelector } from './FolderSelector'
 import { SlideshowSetup } from './SlideshowSetup'
+import { ToggleSwitch } from './ToggleSwitch'
 
-type WizardStep = 1 | 2 | 3 | 4 | 5
+type WizardStep = 1 | 2 | 3 | 4 | 5 | 6
 
 interface SetupWizardProps {
   step: WizardStep
@@ -31,10 +46,19 @@ interface SetupWizardProps {
   eventSignText: string
   eventSignFontId: EventSignFontId
   eventSignSizeId: EventSignSizeId
+  overlayMode: OverlayMode
+  overlayScale: number
+  overlayPngReady: boolean
   slideshowMemoriesDir: string | null
   slideshowIncludeEventPhotos: boolean
   slideshowIdleEnabled: boolean
   slideshowIdleSeconds: number
+  slideshowAudioEnabled: boolean
+  printEnabled: boolean
+  printerName: string
+  printers: PrinterOption[]
+  printersLoading: boolean
+  simulatePrinterLabel: string
   tetherStatus: TetherStatus | null
   tetherChecking: boolean
   testMessage: string | null
@@ -44,6 +68,7 @@ interface SetupWizardProps {
   onSlideshowIdleEnabledChange: (value: boolean) => void
   onSlideshowIncludeEventChange: (value: boolean) => void
   onSlideshowIdleSecondsChange: (seconds: number) => void
+  onSlideshowAudioEnabledChange: (value: boolean) => void
   onCameraSelect: (deviceId: string) => void
   onCameraRefresh: () => void
   onCaptureModeChange: (mode: CaptureMode) => void
@@ -53,6 +78,13 @@ interface SetupWizardProps {
   onEventSignFontChange: (fontId: EventSignFontId) => void
   onEventSignSizeChange: (sizeId: EventSignSizeId) => void
   onSignPreset: (x: number, y: number) => void
+  onOverlayModeChange: (mode: OverlayMode) => void
+  onOverlayScaleChange: (scale: number) => void
+  onPickOverlayPng: () => void
+  onClearOverlayPng: () => void
+  onPrintEnabledChange: (enabled: boolean) => void
+  onPrinterNameChange: (name: string) => void
+  onRefreshPrinters: () => void
   onGoToStep: (step: WizardStep) => void
   onCheckTether: () => void
   onTestCapture: () => void
@@ -78,10 +110,19 @@ export function SetupWizard({
   eventSignText,
   eventSignFontId,
   eventSignSizeId,
+  overlayMode,
+  overlayScale,
+  overlayPngReady,
   slideshowMemoriesDir,
   slideshowIncludeEventPhotos,
   slideshowIdleEnabled,
   slideshowIdleSeconds,
+  slideshowAudioEnabled,
+  printEnabled,
+  printerName,
+  printers,
+  printersLoading,
+  simulatePrinterLabel,
   tetherStatus,
   tetherChecking,
   testMessage,
@@ -91,6 +132,7 @@ export function SetupWizard({
   onSlideshowIdleEnabledChange,
   onSlideshowIncludeEventChange,
   onSlideshowIdleSecondsChange,
+  onSlideshowAudioEnabledChange,
   onCameraSelect,
   onCameraRefresh,
   onCaptureModeChange,
@@ -100,6 +142,13 @@ export function SetupWizard({
   onEventSignFontChange,
   onEventSignSizeChange,
   onSignPreset,
+  onOverlayModeChange,
+  onOverlayScaleChange,
+  onPickOverlayPng,
+  onClearOverlayPng,
+  onPrintEnabledChange,
+  onPrinterNameChange,
+  onRefreshPrinters,
   onGoToStep,
   onCheckTether,
   onTestCapture,
@@ -111,6 +160,7 @@ export function SetupWizard({
   const canGoNext = electronAvailable ? Boolean(photosDir) : true
   const canGoCapture = Boolean(selectedDeviceId && isReady && !error && canGoNext)
   const canStart = canGoCapture
+  const canConfirmPrint = canStart && (!printEnabled || Boolean(printerName))
 
   const tetherAvailable = Boolean(tetherStatus?.available)
   const tetherCanShoot = Boolean(tetherStatus?.canShoot)
@@ -136,7 +186,7 @@ export function SetupWizard({
       <div className="wizard__panel">
         <p className="wizard__eyebrow">Configuración</p>
         <h1 className="wizard__title">Preparar espejo</h1>
-        <p className="wizard__event">Carpeta, cámara, captura, color y letrero</p>
+        <p className="wizard__event">Carpeta, cámara, captura, color, overlay e impresión</p>
 
         <ol className="wizard__steps">
           {(
@@ -145,7 +195,8 @@ export function SetupWizard({
               [2, 'Cámara'],
               [3, 'Captura'],
               [4, 'Color'],
-              [5, 'Letrero'],
+              [5, 'Overlay'],
+              [6, 'Impresión'],
             ] as const
           ).map(([n, label]) => (
             <li key={n}>
@@ -175,11 +226,13 @@ export function SetupWizard({
               memoriesDir={slideshowMemoriesDir}
               includeEventPhotos={slideshowIncludeEventPhotos}
               idleSeconds={slideshowIdleSeconds}
+              audioEnabled={slideshowAudioEnabled}
               electronAvailable={electronAvailable}
               onIdleEnabledChange={onSlideshowIdleEnabledChange}
               onPickMemoriesDir={onPickSlideshowDir}
               onIncludeEventPhotosChange={onSlideshowIncludeEventChange}
               onIdleSecondsChange={onSlideshowIdleSecondsChange}
+              onAudioEnabledChange={onSlideshowAudioEnabledChange}
             />
             <div className="wizard__actions">
               <button
@@ -377,69 +430,228 @@ export function SetupWizard({
 
         {step === 5 && (
           <>
+            <div className="wizard__overlay-tabs" role="tablist" aria-label="Tipo de overlay">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={overlayMode !== 'png'}
+                className={`wizard__overlay-tab${overlayMode !== 'png' ? ' wizard__overlay-tab--active' : ''}`}
+                onClick={() => onOverlayModeChange('text')}
+              >
+                Texto
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={overlayMode === 'png'}
+                className={`wizard__overlay-tab${overlayMode === 'png' ? ' wizard__overlay-tab--active' : ''}`}
+                onClick={() => onOverlayModeChange('png')}
+              >
+                Imagen
+              </button>
+            </div>
+
+            {overlayMode !== 'png' ? (
+              <>
+                <p className="wizard__hint wizard__hint--left">
+                  Arrastra el letrero o usa un atajo. Vacío = sin letrero. Color = el neón del tema.
+                </p>
+                <textarea
+                  className="wizard__sign-input"
+                  rows={3}
+                  maxLength={EVENT_SIGN_MAX_CHARS}
+                  placeholder={'María y José'}
+                  value={eventSignText}
+                  onChange={(e) => onEventSignChange(e.target.value)}
+                />
+                <p className="wizard__meta">
+                  {eventSignText.length}/{EVENT_SIGN_MAX_CHARS}
+                </p>
+                <div className="wizard__sign-fonts" role="radiogroup" aria-label="Fuente del letrero">
+                  {EVENT_SIGN_FONTS.map((font) => (
+                    <button
+                      key={font.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={eventSignFontId === font.id}
+                      className={`wizard__sign-font${
+                        eventSignFontId === font.id ? ' wizard__sign-font--active' : ''
+                      }`}
+                      style={{
+                        fontFamily: font.family,
+                        fontWeight: font.weight,
+                        letterSpacing: font.letterSpacing,
+                      }}
+                      onClick={() => onEventSignFontChange(font.id)}
+                    >
+                      <span className="wizard__sign-font-sample">{font.sample}</span>
+                      <span className="wizard__sign-font-name">{font.name}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="wizard__sign-sizes" role="radiogroup" aria-label="Tamaño del letrero">
+                  {EVENT_SIGN_SIZES.map((size) => (
+                    <button
+                      key={size.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={eventSignSizeId === size.id}
+                      className={`wizard__sign-size${
+                        eventSignSizeId === size.id ? ' wizard__sign-size--active' : ''
+                      }`}
+                      onClick={() => onEventSignSizeChange(size.id)}
+                    >
+                      {size.name}
+                    </button>
+                  ))}
+                </div>
+                <div className="wizard__sign-presets">
+                  <button type="button" className="btn-secondary" onClick={() => onSignPreset(50, 16)}>
+                    Arriba
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={() => onSignPreset(50, 48)}>
+                    Centro
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={() => onSignPreset(50, 82)}>
+                    Abajo
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="wizard__hint wizard__hint--left">
+                  Elige un PNG con transparencia. Arrástralo en el espejo; la esquina escala el tamaño.
+                </p>
+                <div className="wizard__overlay-png">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={onPickOverlayPng}
+                    disabled={!electronAvailable || !photosDir}
+                  >
+                    {overlayPngReady ? 'Cambiar PNG' : 'Elegir PNG'}
+                  </button>
+                  {overlayPngReady ? (
+                    <button type="button" className="btn-secondary" onClick={onClearOverlayPng}>
+                      Quitar
+                    </button>
+                  ) : null}
+                </div>
+                <p className="wizard__meta">
+                  {overlayPngReady
+                    ? 'PNG listo · se guarda en la carpeta del evento'
+                    : 'Sin imagen · elige un archivo .png'}
+                </p>
+                {overlayPngReady ? (
+                  <label className="wizard__overlay-scale">
+                    <span>Escala {Math.round(clampOverlayScale(overlayScale) * 100)}%</span>
+                    <input
+                      type="range"
+                      min={MIN_OVERLAY_SCALE}
+                      max={MAX_OVERLAY_SCALE}
+                      step={0.05}
+                      value={clampOverlayScale(overlayScale || DEFAULT_OVERLAY_SCALE)}
+                      onChange={(e) => onOverlayScaleChange(Number(e.target.value))}
+                    />
+                  </label>
+                ) : null}
+                <div className="wizard__sign-presets">
+                  <button type="button" className="btn-secondary" onClick={() => onSignPreset(50, 16)}>
+                    Arriba
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={() => onSignPreset(50, 48)}>
+                    Centro
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={() => onSignPreset(50, 82)}>
+                    Abajo
+                  </button>
+                </div>
+              </>
+            )}
+
+            <div className="wizard__actions">
+              <button type="button" className="btn-secondary wizard__back" onClick={onBack}>
+                Atrás
+              </button>
+              <button
+                type="button"
+                className="btn-primary wizard__confirm"
+                onClick={onNext}
+                disabled={!canStart}
+              >
+                Continuar
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === 6 && (
+          <>
             <p className="wizard__hint wizard__hint--left">
-              Arrastra el letrero o usa un atajo. Vacío = sin letrero. Color = el neón del tema.
+              Si la impresión está apagada, en la web de descarga la pestaña Imprimir queda
+              deshabilitada.
             </p>
-            <textarea
-              className="wizard__sign-input"
-              rows={3}
-              maxLength={EVENT_SIGN_MAX_CHARS}
-              placeholder={'María y José'}
-              value={eventSignText}
-              onChange={(e) => onEventSignChange(e.target.value)}
+            <ToggleSwitch
+              id="wizard-print-enabled"
+              label="Habilitar impresión"
+              hint="DNP u otra impresora de Windows, o simulación sin papel."
+              checked={printEnabled}
+              onChange={onPrintEnabledChange}
             />
-            <p className="wizard__meta">
-              {eventSignText.length}/{EVENT_SIGN_MAX_CHARS}
-            </p>
-            <div className="wizard__sign-fonts" role="radiogroup" aria-label="Fuente del letrero">
-              {EVENT_SIGN_FONTS.map((font) => (
-                <button
-                  key={font.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={eventSignFontId === font.id}
-                  className={`wizard__sign-font${
-                    eventSignFontId === font.id ? ' wizard__sign-font--active' : ''
-                  }`}
-                  style={{
-                    fontFamily: font.family,
-                    fontWeight: font.weight,
-                    letterSpacing: font.letterSpacing,
-                  }}
-                  onClick={() => onEventSignFontChange(font.id)}
-                >
-                  <span className="wizard__sign-font-sample">{font.sample}</span>
-                  <span className="wizard__sign-font-name">{font.name}</span>
-                </button>
-              ))}
-            </div>
-            <div className="wizard__sign-sizes" role="radiogroup" aria-label="Tamaño del letrero">
-              {EVENT_SIGN_SIZES.map((size) => (
-                <button
-                  key={size.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={eventSignSizeId === size.id}
-                  className={`wizard__sign-size${
-                    eventSignSizeId === size.id ? ' wizard__sign-size--active' : ''
-                  }`}
-                  onClick={() => onEventSignSizeChange(size.id)}
-                >
-                  {size.name}
-                </button>
-              ))}
-            </div>
-            <div className="wizard__sign-presets">
-              <button type="button" className="btn-secondary" onClick={() => onSignPreset(50, 16)}>
-                Arriba
-              </button>
-              <button type="button" className="btn-secondary" onClick={() => onSignPreset(50, 48)}>
-                Centro
-              </button>
-              <button type="button" className="btn-secondary" onClick={() => onSignPreset(50, 82)}>
-                Abajo
-              </button>
-            </div>
+
+            {printEnabled && (
+              <div className="wizard__printers">
+                <div className="wizard__printers-head">
+                  <p className="wizard__meta">Impresora</p>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={onRefreshPrinters}
+                    disabled={printersLoading || !electronAvailable}
+                  >
+                    {printersLoading ? 'Buscando…' : 'Actualizar lista'}
+                  </button>
+                </div>
+                <div className="wizard__printer-list" role="radiogroup" aria-label="Impresora">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={printerName === SIMULATE_PRINTER_ID}
+                    className={`wizard__printer${
+                      printerName === SIMULATE_PRINTER_ID ? ' wizard__printer--active' : ''
+                    }`}
+                    onClick={() => onPrinterNameChange(SIMULATE_PRINTER_ID)}
+                  >
+                    <span className="wizard__printer-name">{simulatePrinterLabel}</span>
+                    <span className="wizard__printer-meta">Solo prueba · no usa papel</span>
+                  </button>
+                  {printers.map((printer) => (
+                    <button
+                      key={printer.name}
+                      type="button"
+                      role="radio"
+                      aria-checked={printerName === printer.name}
+                      className={`wizard__printer${
+                        printerName === printer.name ? ' wizard__printer--active' : ''
+                      }`}
+                      onClick={() => onPrinterNameChange(printer.name)}
+                    >
+                      <span className="wizard__printer-name">{printer.name}</span>
+                      {printer.isDefault ? (
+                        <span className="wizard__printer-meta">Predeterminada</span>
+                      ) : null}
+                    </button>
+                  ))}
+                  {!printersLoading && printers.length === 0 && (
+                    <p className="wizard__hint wizard__hint--left">
+                      No se detectaron impresoras de Windows. Puedes usar simulación o revisar
+                      Configuración → Impresoras.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="wizard__actions">
               <button type="button" className="btn-secondary wizard__back" onClick={onBack}>
                 Atrás
@@ -448,7 +660,7 @@ export function SetupWizard({
                 type="button"
                 className="btn-primary wizard__confirm"
                 onClick={onConfirm}
-                disabled={!canStart}
+                disabled={!canConfirmPrint}
               >
                 Comenzar
               </button>
