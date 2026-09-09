@@ -16,20 +16,33 @@ export interface SlideshowConfig {
   memoriesDir: string | null
   includeEventPhotos: boolean
   idleSeconds: SlideshowIdleSeconds
+  /** When true, videos play with sound; photos ignore this. */
+  audioEnabled: boolean
 }
 
+export type SlideshowMediaKind = 'image' | 'video'
 export type SlideshowImageSource = 'memory' | 'event'
 
 export interface SlideshowImage {
   filePath: string
   url: string
   source: SlideshowImageSource
+  kind: SlideshowMediaKind
 }
 
 const IMAGE_EXT = /\.(jpe?g|png|webp)$/i
+const VIDEO_EXT = /\.(mp4|webm|mov)$/i
 
 export function isSlideshowImageFile(name: string): boolean {
   return IMAGE_EXT.test(name)
+}
+
+export function isSlideshowVideoFile(name: string): boolean {
+  return VIDEO_EXT.test(name)
+}
+
+export function slideshowMediaKindFromPath(filePath: string): SlideshowMediaKind {
+  return VIDEO_EXT.test(filePath) ? 'video' : 'image'
 }
 
 export function normalizeSlideshowIdleSeconds(value: unknown): SlideshowIdleSeconds {

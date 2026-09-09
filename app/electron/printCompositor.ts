@@ -9,6 +9,7 @@ import {
 import { SHEET_HEIGHT_PX, SHEET_WIDTH_PX, STRIP_WIDTH_PX } from './printConfig'
 import type { IndividualPrintMeta } from './printTypes'
 import { renderSignOverlayPng } from './printSignOverlay'
+import { renderFileOverlayPng, resolveEventOverlayPath } from './printPngOverlay'
 
 export type PrintSheetLayout = 'portrait' | 'landscape'
 
@@ -85,27 +86,10 @@ function sheetPixelsForLayout(layout: PrintSheetLayout): { width: number; height
   return { width: SHEET_WIDTH_PX, height: SHEET_HEIGHT_PX }
 }
 
-/**
- * Print pipeline: original tether → orient → crop to sheet aspect → fill sheet → inject sign.
- * Layout follows wizard rotation (0° landscape, 90° portrait).
- */
-export async function composeIndividualForPrint(
-  originalPath: string,
-  meta: IndividualPrintMeta | null,
-  fallbackEditedPath: string | null,
-): Promise<ComposedPrintSheet> {
-  try {
-    return await composeFromOriginal(originalPath, meta)
-  } catch (err) {
-    if (!fallbackEditedPath) throw err
-    console.warn('[print] falling back to edited JPEG:', err instanceof Error ? err.message : err)
-    return composeIndividual(fallbackEditedPath)
-  }
-}
-
 async function composeFromOriginal(
   originalPath: string,
   meta: IndividualPrintMeta | null,
+  photosDir: string | null,
 ): Promise<ComposedPrintSheet> {
   const previewRotation = normalizePreviewRotation(meta?.previewRotation) as PreviewRotation
   const layout = printLayoutForPreviewRotation(previewRotation)
@@ -127,8 +111,10 @@ async function composeFromOriginal(
     .extract({ left: crop.left, top: crop.top, width: crop.width, height: crop.height })
     .resize(sheetW, sheetH, { fit: 'fill' })
 
+  const mode = meta?.overlayMode ?? (hasSignText(meta?.signText) ? 'text' : 'none')
   const signText = meta?.signText?.trim()
-  if (hasSignText(signText) && meta) {
+
+  if (mode === 'text' && hasSignText(signText) && meta) {
     const signOverlay = await renderSignOverlayPng(sheetW, sheetH, {
       signText: signText!,
       signX: meta.signX ?? 50,
@@ -144,8 +130,38 @@ async function composeFromOriginal(
     if (signOverlay) {
       base = sharp(await base.toBuffer()).composite([{ input: signOverlay, blend: 'over' }])
     }
+  } else if (mode === 'png' && photosDir && meta) {
+    const overlayPath = resolveEventOverlayPath(photosDir)
+    const pngOverlay = await renderFileOverlayPng(sheetW, sheetH, {
+      overlayPath,
+      signX: meta.signX ?? 50,
+      signY: meta.signY ?? 16,
+      scale: meta.overlayScale ?? 1,
+      previewRotation: meta.previewRotation,
+      fullWidth,
+      fullHeight,
+      crop,
+    })
+    if (pngOverlay) {
+      base = sharp(await base.toBuffer()).composite([{ input: pngOverlay, blend: 'over' }])
+    }
   }
 
   const buffer = await base.jpeg({ quality: 95, mozjpeg: true }).toBuffer()
   return { buffer, layout }
+}
+
+export async function composeIndividualForPrint(
+  originalPath: string,
+  meta: IndividualPrintMeta | null,
+  fallbackEditedPath: string | null,
+  photosDir: string | null = null,
+): Promise<ComposedPrintSheet> {
+  try {
+    return await composeFromOriginal(originalPath, meta, photosDir)
+  } catch (err) {
+    if (!fallbackEditedPath) throw err
+    console.warn('[print] falling back to edited JPEG:', err instanceof Error ? err.message : err)
+    return composeIndividual(fallbackEditedPath)
+  }
 }

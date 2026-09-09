@@ -12,10 +12,13 @@ import {
   loadStoredEventSignText,
   loadStoredEventSignX,
   loadStoredEventSignY,
+  loadStoredOverlayMode,
+  loadStoredOverlayScale,
   loadStoredPhotosDir,
   loadStoredPreviewRotation,
   loadStoredPrintEnabled,
   loadStoredPrinterName,
+  loadStoredSlideshowAudioEnabled,
   loadStoredSlideshowIdleEnabled,
   loadStoredSlideshowIdleSeconds,
   loadStoredSlideshowIncludeEventPhotos,
@@ -26,6 +29,12 @@ import {
   SIMULATE_PRINTER_ID,
 } from './lib/sessionConfig'
 import { constrainEventSignInput, hasEventSign, normalizeEventSign } from './lib/eventSign'
+import {
+  clampOverlayScale,
+  hasActiveOverlay,
+  normalizeOverlayMode,
+  type OverlayMode,
+} from './lib/overlay'
 import { normalizeSlideshowIdleSeconds } from './lib/slideshow'
 import { composePhoto } from './lib/composePhoto'
 import { composePhotoStrip } from './lib/stripCompositor'
@@ -38,6 +47,7 @@ import { useSlideshowImages } from './hooks/useSlideshowImages'
 import { useIdleSlideshow } from './hooks/useIdleSlideshow'
 import { CameraPreview } from './components/CameraPreview'
 import { NeonSign } from './components/NeonSign'
+import { PngOverlay } from './components/PngOverlay'
 import { IdleSlideshow } from './components/IdleSlideshow'
 import { SetupWizard } from './components/SetupWizard'
 import { COUNTDOWN_OPTIONS, IdleScreen } from './components/IdleScreen'
@@ -64,6 +74,9 @@ function App() {
   const [eventSignY, setEventSignY] = useState(() => loadStoredEventSignY())
   const [eventSignFontId, setEventSignFontId] = useState(() => loadStoredEventSignFontId())
   const [eventSignSizeId, setEventSignSizeId] = useState(() => loadStoredEventSignSizeId())
+  const [overlayMode, setOverlayMode] = useState<OverlayMode>(() => loadStoredOverlayMode())
+  const [overlayScale, setOverlayScale] = useState(() => loadStoredOverlayScale())
+  const [overlayPngUrl, setOverlayPngUrl] = useState<string | null>(null)
   const [slideshowMemoriesDir, setSlideshowMemoriesDir] = useState<string | null>(() =>
     loadStoredSlideshowMemoriesDir(),
   )
@@ -75,6 +88,9 @@ function App() {
   )
   const [slideshowIdleSeconds, setSlideshowIdleSeconds] = useState(() =>
     loadStoredSlideshowIdleSeconds(),
+  )
+  const [slideshowAudioEnabled, setSlideshowAudioEnabled] = useState(() =>
+    loadStoredSlideshowAudioEnabled(),
   )
   const [printEnabled, setPrintEnabled] = useState(() => loadStoredPrintEnabled())
   const [printerName, setPrinterName] = useState(() => loadStoredPrinterName())
@@ -152,12 +168,14 @@ function App() {
       memoriesDir: slideshowMemoriesDir,
       includeEventPhotos: slideshowIncludeEventPhotos,
       idleSeconds: slideshowIdleSeconds,
+      audioEnabled: slideshowAudioEnabled,
     }),
     [
       slideshowIdleEnabled,
       slideshowMemoriesDir,
       slideshowIncludeEventPhotos,
       slideshowIdleSeconds,
+      slideshowAudioEnabled,
     ],
   )
 
@@ -176,7 +194,9 @@ function App() {
     displayMode: slideshowDisplayMode,
     current: slideshowCurrent,
     fade: slideshowFade,
+    audioEnabled: slideshowAudioOn,
     bumpActivity: bumpSlideshowActivity,
+    advanceSlide: advanceSlideshow,
   } = useIdleSlideshow({
     active: setupComplete && phase === 'idle' && !error,
     config: slideshowConfig,
@@ -201,6 +221,9 @@ function App() {
       signY: eventSignY,
       signFontId: eventSignFontId,
       signSizeId: eventSignSizeId,
+      overlayMode,
+      overlayPngUrl,
+      overlayScale,
       previewRotation,
     }),
     [
@@ -210,9 +233,26 @@ function App() {
       eventSignY,
       eventSignFontId,
       eventSignSizeId,
+      overlayMode,
+      overlayPngUrl,
+      overlayScale,
       previewRotation,
     ],
   )
+
+  const overlayActive = hasActiveOverlay(overlayMode, {
+    hasText: hasEventSign(eventSignText),
+    hasPng: Boolean(overlayPngUrl),
+  })
+
+  const effectiveOverlayMode: OverlayMode =
+    overlayMode === 'png' && overlayPngUrl
+      ? 'png'
+      : overlayMode === 'text' && hasEventSign(eventSignText)
+        ? 'text'
+        : overlayMode === 'png' || overlayMode === 'text'
+          ? overlayMode
+          : 'none'
 
   const composedPhoto = usePhotoCompositor(
     photoMode === 'individual' ? rawPhoto : null,
@@ -230,7 +270,9 @@ function App() {
           const needsOrientation = Boolean(frame.tetherSourcePath) && !frame.usedFallback
           return composePhoto(frame.rawPhoto, filter, {
             ...composeOverlay,
+            // Strip frame text is separate; bake PNG into cells when in png mode.
             signText: '',
+            overlayMode: overlayMode === 'png' ? 'png' : 'none',
             needsOrientationPass: needsOrientation,
           })
         }),
@@ -244,7 +286,7 @@ function App() {
       setReviewPhoto(strip)
       setPhase('review')
     },
-    [composeOverlay, filters, stripFilterIds, previewRotation],
+    [composeOverlay, filters, stripFilterIds, previewRotation, overlayMode],
   )
 
   const clearStripTetherFiles = useCallback((frames: StripCaptureFrame[]) => {
@@ -389,6 +431,44 @@ function App() {
     if (wizardStep !== 6 || setupComplete) return
     void refreshPrinters()
   }, [wizardStep, setupComplete, refreshPrinters])
+
+  const refreshOverlayPng = useCallback(async () => {
+    if (!window.electronAPI?.getOverlayPngDataUrl || !photosDir) {
+      setOverlayPngUrl(null)
+      return
+    }
+    try {
+      const dataUrl = await window.electronAPI.getOverlayPngDataUrl(photosDir)
+      setOverlayPngUrl(dataUrl)
+    } catch {
+      setOverlayPngUrl(null)
+    }
+  }, [photosDir])
+
+  useEffect(() => {
+    void refreshOverlayPng()
+  }, [refreshOverlayPng])
+
+  const handlePickOverlayPng = useCallback(async () => {
+    if (!window.electronAPI?.selectOverlayPng || !photosDir) return
+    const source = await window.electronAPI.selectOverlayPng()
+    if (!source) return
+    await window.electronAPI.installOverlayPng(photosDir, source)
+    setOverlayMode('png')
+    await refreshOverlayPng()
+  }, [photosDir, refreshOverlayPng])
+
+  const handleClearOverlayPng = useCallback(async () => {
+    if (!window.electronAPI?.clearOverlayPng || !photosDir) return
+    await window.electronAPI.clearOverlayPng(photosDir)
+    setOverlayPngUrl(null)
+    setOverlayMode('none')
+  }, [photosDir])
+
+  const handleOverlayModeChange = useCallback((mode: OverlayMode) => {
+    const next = normalizeOverlayMode(mode)
+    setOverlayMode(next === 'none' ? 'text' : next)
+  }, [])
 
   const handleThemeChange = (id: AppThemeId) => {
     setThemeId(id)
@@ -571,10 +651,13 @@ function App() {
         eventSignY,
         eventSignFontId,
         eventSignSizeId,
+        overlayMode: effectiveOverlayMode === 'none' ? overlayMode : effectiveOverlayMode,
+        overlayScale: clampOverlayScale(overlayScale),
         slideshowMemoriesDir,
         slideshowIncludeEventPhotos,
         slideshowIdleEnabled,
         slideshowIdleSeconds,
+        slideshowAudioEnabled,
         printEnabled,
         printerName,
       })
@@ -692,7 +775,10 @@ function App() {
         stripDataUrl: stripPhoto,
         poses,
         themeId,
-        signText: hasEventSign(eventSignText) ? normalizeEventSign(eventSignText) : null,
+        signText:
+          overlayMode === 'text' && hasEventSign(eventSignText)
+            ? normalizeEventSign(eventSignText)
+            : null,
         previewRotation,
       })
 
@@ -717,7 +803,8 @@ function App() {
 
     const filename = `foto-${Date.now()}.jpg`
     const keepNative = Boolean(tetherSourcePath) && !usedFallback
-    const needsEdit = hasEventSign(eventSignText) || activeFilterId !== 'normal'
+    const needsEdit =
+      overlayActive || activeFilterId !== 'normal'
 
     if (window.electronAPI?.saveEventPhotos && photosDir) {
       const result = await window.electronAPI.saveEventPhotos({
@@ -729,7 +816,10 @@ function App() {
         reuseOriginalAsEdited: !needsEdit,
         themeId,
         printMeta: {
-          signText: hasEventSign(eventSignText) ? normalizeEventSign(eventSignText) : null,
+          signText:
+            overlayMode === 'text' && hasEventSign(eventSignText)
+              ? normalizeEventSign(eventSignText)
+              : null,
           signX: eventSignX,
           signY: eventSignY,
           signFontId: eventSignFontId,
@@ -737,6 +827,8 @@ function App() {
           themeId,
           previewRotation,
           needsOrientationPass: keepNative,
+          overlayMode: effectiveOverlayMode,
+          overlayScale: clampOverlayScale(overlayScale),
         },
       })
 
@@ -786,7 +878,7 @@ function App() {
         }
       />
 
-      {hasEventSign(eventSignText) &&
+      {overlayActive &&
         !fullscreenSlideshow &&
         ((setupComplete && phase === 'idle') || (!setupComplete && wizardStep === 5)) && (
           <>
@@ -794,6 +886,7 @@ function App() {
               <div
                 className="neon-sign-stage"
                 onPointerDown={(e) => {
+                  if ((e.target as HTMLElement).closest('.neon-sign, .png-overlay')) return
                   e.currentTarget.setPointerCapture(e.pointerId)
                   const nx = (e.clientX / window.innerWidth) * 100
                   const ny = (e.clientY / window.innerHeight) * 100
@@ -807,18 +900,35 @@ function App() {
                 }}
               />
             )}
-            <NeonSign
-              text={eventSignText}
-              x={eventSignX}
-              y={eventSignY}
-              fontId={eventSignFontId}
-              sizeId={eventSignSizeId}
-              draggable={!setupComplete}
-              onPositionChange={(x, y) => {
-                setEventSignX(x)
-                setEventSignY(y)
-              }}
-            />
+            {overlayMode === 'png' && overlayPngUrl ? (
+              <PngOverlay
+                src={overlayPngUrl}
+                x={eventSignX}
+                y={eventSignY}
+                scale={overlayScale}
+                className="png-overlay--live"
+                draggable={!setupComplete}
+                onPositionChange={(x, y) => {
+                  setEventSignX(x)
+                  setEventSignY(y)
+                }}
+                onScaleChange={(s) => setOverlayScale(clampOverlayScale(s))}
+              />
+            ) : (
+              <NeonSign
+                text={eventSignText}
+                x={eventSignX}
+                y={eventSignY}
+                fontId={eventSignFontId}
+                sizeId={eventSignSizeId}
+                className="neon-sign--live"
+                draggable={!setupComplete}
+                onPositionChange={(x, y) => {
+                  setEventSignX(x)
+                  setEventSignY(y)
+                }}
+              />
+            )}
           </>
         )}
 
@@ -839,6 +949,9 @@ function App() {
           eventSignText={eventSignText}
           eventSignFontId={eventSignFontId}
           eventSignSizeId={eventSignSizeId}
+          overlayMode={overlayMode === 'none' ? 'text' : overlayMode}
+          overlayScale={overlayScale}
+          overlayPngReady={Boolean(overlayPngUrl)}
           tetherStatus={tetherStatus}
           tetherChecking={tetherChecking}
           testMessage={testMessage}
@@ -850,10 +963,12 @@ function App() {
           onSlideshowIdleSecondsChange={(sec) =>
             setSlideshowIdleSeconds(normalizeSlideshowIdleSeconds(sec))
           }
+          onSlideshowAudioEnabledChange={setSlideshowAudioEnabled}
           slideshowMemoriesDir={slideshowMemoriesDir}
           slideshowIncludeEventPhotos={slideshowIncludeEventPhotos}
           slideshowIdleEnabled={slideshowIdleEnabled}
           slideshowIdleSeconds={slideshowIdleSeconds}
+          slideshowAudioEnabled={slideshowAudioEnabled}
           printEnabled={printEnabled}
           printerName={printerName}
           printers={printers}
@@ -867,13 +982,20 @@ function App() {
           onCaptureModeChange={handleCaptureModeChange}
           onThemeChange={handleThemeChange}
           onPreviewRotationChange={setPreviewRotation}
-          onEventSignChange={(text) => setEventSignText(constrainEventSignInput(text))}
+          onEventSignChange={(text) => {
+            setEventSignText(constrainEventSignInput(text))
+            setOverlayMode('text')
+          }}
           onEventSignFontChange={setEventSignFontId}
           onEventSignSizeChange={setEventSignSizeId}
           onSignPreset={(x, y) => {
             setEventSignX(x)
             setEventSignY(y)
           }}
+          onOverlayModeChange={handleOverlayModeChange}
+          onOverlayScaleChange={(s) => setOverlayScale(clampOverlayScale(s))}
+          onPickOverlayPng={() => void handlePickOverlayPng()}
+          onClearOverlayPng={() => void handleClearOverlayPng()}
           onPrintEnabledChange={setPrintEnabled}
           onPrinterNameChange={setPrinterName}
           onRefreshPrinters={() => void refreshPrinters()}
@@ -932,9 +1054,11 @@ function App() {
       <IdleSlideshow
         visible={slideshowVisible}
         displayMode={slideshowDisplayMode}
-        imageUrl={slideshowCurrent?.url ?? null}
+        item={slideshowCurrent}
         faded={slideshowFade}
+        audioEnabled={slideshowAudioOn}
         onDismiss={bumpSlideshowActivity}
+        onMediaEnded={advanceSlideshow}
       />
 
       {setupComplete && phase === 'strip-flash' && stripMode && (

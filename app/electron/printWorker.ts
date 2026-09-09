@@ -91,6 +91,7 @@ async function executePrint(job: PrintJobRow, registry: EventRegistry): Promise<
       printSource.meta,
       printSource.frameOptions,
       printSource.editedPath,
+      registry.photosDir,
     )
     console.log(`[print] composed individual Instagram frame: ${photoId}`)
     await printSheetJpeg(composed.buffer, job.id, composed.layout)
@@ -103,6 +104,7 @@ async function executePrint(job: PrintJobRow, registry: EventRegistry): Promise<
       printSource.originalPath,
       printSource.meta,
       printSource.editedPath,
+      registry.photosDir,
     )
     console.log(`[print] composed individual from original (${composed.layout}): ${printSource.originalPath}`)
     await printSheetJpeg(composed.buffer, job.id, composed.layout)

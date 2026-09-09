@@ -19,7 +19,7 @@ import type {
 } from './printTypes'
 import { normalizeInstagramFrameOptions } from './frames/instagramTypes'
 
-const SCHEMA_VERSION = 4
+const SCHEMA_VERSION = 5
 
 function dbPathFor(photosDir: string): string {
   return path.join(photosDir, '.fotomirror', 'event.db')
@@ -98,6 +98,8 @@ function rowToPhoto(row: Record<string, unknown>): PhotoRow {
     signY: row.sign_y != null ? Number(row.sign_y) : null,
     signFontId: row.sign_font_id ? String(row.sign_font_id) : null,
     signSizeId: row.sign_size_id ? String(row.sign_size_id) : null,
+    overlayMode: row.overlay_mode ? String(row.overlay_mode) : null,
+    overlayScale: row.overlay_scale != null ? Number(row.overlay_scale) : null,
     themeId: row.theme_id ? String(row.theme_id) : null,
     previewRotation: row.preview_rotation != null ? Number(row.preview_rotation) : null,
     needsOrientationPass: row.needs_orientation_pass != null ? Number(row.needs_orientation_pass) : null,
@@ -187,6 +189,8 @@ export class EventRegistry {
         sign_y REAL,
         sign_font_id TEXT,
         sign_size_id TEXT,
+        overlay_mode TEXT,
+        overlay_scale REAL,
         theme_id TEXT,
         preview_rotation INTEGER,
         needs_orientation_pass INTEGER,
@@ -289,6 +293,17 @@ export class EventRegistry {
       const names = new Set(cols.map((col) => col.name))
       if (!names.has('print_frame_options')) {
         this.db.exec(`ALTER TABLE photos ADD COLUMN print_frame_options TEXT`)
+      }
+    }
+
+    if (fromVersion < 5) {
+      const cols = this.db.prepare(`PRAGMA table_info(photos)`).all() as Array<{ name: string }>
+      const names = new Set(cols.map((col) => col.name))
+      if (!names.has('overlay_mode')) {
+        this.db.exec(`ALTER TABLE photos ADD COLUMN overlay_mode TEXT`)
+      }
+      if (!names.has('overlay_scale')) {
+        this.db.exec(`ALTER TABLE photos ADD COLUMN overlay_scale REAL`)
       }
     }
   }
@@ -416,10 +431,10 @@ export class EventRegistry {
       .prepare(
         `INSERT INTO photos (
           id, type, created_at, qr_filename, edited_filename, original_filename,
-          sign_text, sign_x, sign_y, sign_font_id, sign_size_id, theme_id,
+          sign_text, sign_x, sign_y, sign_font_id, sign_size_id, overlay_mode, overlay_scale, theme_id,
           preview_rotation, needs_orientation_pass,
           print_status, print_allowed
-        ) VALUES (?, 'individual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', 1)
+        ) VALUES (?, 'individual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', 1)
         ON CONFLICT(id) DO NOTHING`,
       )
       .run(
@@ -433,6 +448,8 @@ export class EventRegistry {
         meta?.signY ?? null,
         meta?.signFontId ?? null,
         meta?.signSizeId ?? null,
+        meta?.overlayMode ?? null,
+        meta?.overlayScale ?? null,
         meta?.themeId ?? null,
         meta?.previewRotation ?? null,
         meta?.needsOrientationPass ? 1 : 0,
@@ -843,6 +860,8 @@ export class EventRegistry {
         themeId: photo.themeId,
         previewRotation: photo.previewRotation,
         needsOrientationPass: Boolean(photo.needsOrientationPass),
+        overlayMode: (photo.overlayMode as IndividualPrintMeta['overlayMode']) ?? null,
+        overlayScale: photo.overlayScale,
       },
       templateId: photo.printTemplateId,
       frameOptions: photo.printFrameOptions,

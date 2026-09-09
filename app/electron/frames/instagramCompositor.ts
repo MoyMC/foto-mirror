@@ -9,6 +9,7 @@ import {
 import type { ComposedPrintSheet } from '../printCompositor'
 import { SHEET_HEIGHT_PX, SHEET_WIDTH_PX } from '../printConfig'
 import type { IndividualPrintMeta, PrintCropRect } from '../printTypes'
+import { renderFileOverlayPng, resolveEventOverlayPath } from '../printPngOverlay'
 import {
   defaultCropForInstagram,
   INSTAGRAM_BOTTOM_CHROME_PX,
@@ -322,15 +323,37 @@ export async function composeInstagramIndividual(
   meta: IndividualPrintMeta | null,
   frameOptions: InstagramFrameOptions | null | undefined,
   fallbackEditedPath: string | null,
+  photosDir: string | null = null,
 ): Promise<ComposedPrintSheet> {
   const options = normalizeInstagramFrameOptions(frameOptions)
   const logoPath = resolveBrandLogoPath()
+  const mode = meta?.overlayMode ?? 'none'
 
   let photo: Buffer
-  if (originalPath && fs.existsSync(originalPath)) {
+  // PNG is baked into editadas at capture time — prefer that so framed print matches download.
+  if (mode === 'png' && fallbackEditedPath && fs.existsSync(fallbackEditedPath)) {
+    photo = await preparePhoto(fallbackEditedPath, meta, options.crop, false)
+  } else if (originalPath && fs.existsSync(originalPath)) {
     photo = await preparePhoto(originalPath, meta, options.crop, true)
+    if (mode === 'png' && photosDir) {
+      const overlay = await renderFileOverlayPng(PHOTO_W, PHOTO_H, {
+        overlayPath: resolveEventOverlayPath(photosDir),
+        signX: meta?.signX ?? 50,
+        signY: meta?.signY ?? 16,
+        scale: meta?.overlayScale ?? 1,
+        previewRotation: meta?.previewRotation ?? 90,
+        fullWidth: PHOTO_W,
+        fullHeight: PHOTO_H,
+        crop: { left: 0, top: 0, width: PHOTO_W, height: PHOTO_H },
+      })
+      if (overlay) {
+        photo = await sharp(photo)
+          .composite([{ input: overlay, blend: 'over' }])
+          .jpeg({ quality: 95 })
+          .toBuffer()
+      }
+    }
   } else if (fallbackEditedPath && fs.existsSync(fallbackEditedPath)) {
-    // Edited JPEGs are usually already oriented — don't double-rotate.
     photo = await preparePhoto(fallbackEditedPath, meta, options.crop, false)
   } else {
     throw new Error('Sin archivo de foto para marco Instagram')

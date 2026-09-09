@@ -48,6 +48,8 @@ export interface PhotoRow {
   signY: number | null
   signFontId: string | null
   signSizeId: string | null
+  overlayMode: string | null
+  overlayScale: number | null
   themeId: string | null
   previewRotation: number | null
   needsOrientationPass: number | null
@@ -73,6 +75,8 @@ export interface IndividualPrintMeta {
   themeId?: string | null
   previewRotation?: number | null
   needsOrientationPass?: boolean
+  overlayMode?: 'none' | 'text' | 'png' | null
+  overlayScale?: number | null
 }
 
 export interface PrintJobRow {

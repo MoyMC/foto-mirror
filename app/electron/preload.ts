@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       themeId?: string
       previewRotation?: number
       needsOrientationPass?: boolean
+      overlayMode?: 'none' | 'text' | 'png'
+      overlayScale?: number
     }
   }) =>
     ipcRenderer.invoke('save-event-photos', input) as Promise<{
@@ -103,6 +105,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }>,
   getSimulatePrinter: () =>
     ipcRenderer.invoke('get-simulate-printer') as Promise<{ id: string; label: string }>,
+  selectOverlayPng: () => ipcRenderer.invoke('select-overlay-png') as Promise<string | null>,
+  installOverlayPng: (photosDir: string, sourcePath: string) =>
+    ipcRenderer.invoke('install-overlay-png', photosDir, sourcePath) as Promise<string>,
+  clearOverlayPng: (photosDir: string) =>
+    ipcRenderer.invoke('clear-overlay-png', photosDir) as Promise<void>,
+  getOverlayPngPath: (photosDir: string) =>
+    ipcRenderer.invoke('get-overlay-png-path', photosDir) as Promise<string | null>,
+  getOverlayPngDataUrl: (photosDir: string) =>
+    ipcRenderer.invoke('get-overlay-png-data-url', photosDir) as Promise<string | null>,
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   quitApp: () => ipcRenderer.invoke('quit-app'),
 })

@@ -6,6 +6,7 @@ import { networkInterfaces } from 'node:os'
 import { getEventRegistry } from './eventRegistry'
 import { isPrintingEnabled } from './printConfig'
 import type { PrintRequestOptions } from './printTypes'
+import { mediaContentType, sendMediaFile } from './slideshowBridge'
 
 const PORT = 8787
 
@@ -13,33 +14,34 @@ let server: http.Server | null = null
 let activePhotosDir: string | null = null
 let slideshowMemoriesDir: string | null = null
 
+function isIPv4(family: string | number): boolean {
+  return family === 'IPv4' || family === 4
+}
+
+/** Prefer real LAN adapters; deprioritize virtual ones phones cannot reach. */
+function ifaceRank(name: string): number {
+  const n = name.toLowerCase()
+  if (/vethernet|hyper-v|wsl|virtualbox|vmware|docker|veth|loopback|bluetooth|teredo|isatap/.test(n)) {
+    return 2
+  }
+  if (/wi-?fi|wlan|wireless|^ethernet|ethernet |eth\d|en\d|local area connection/.test(n)) return 0
+  return 1
+}
+
 function getLocalIp(): string {
-  for (const iface of Object.values(networkInterfaces())) {
-    for (const cfg of iface ?? []) {
-      if (cfg.family === 'IPv4' && !cfg.internal) return cfg.address
+  const candidates: { address: string; rank: number }[] = []
+  for (const [name, list] of Object.entries(networkInterfaces())) {
+    for (const cfg of list ?? []) {
+      if (!isIPv4(cfg.family) || cfg.internal) continue
+      candidates.push({ address: cfg.address, rank: ifaceRank(name) })
     }
   }
-  return '127.0.0.1'
+  candidates.sort((a, b) => a.rank - b.rank)
+  return candidates[0]?.address ?? '127.0.0.1'
 }
 
 function contentType(filePath: string): string {
-  const ext = path.extname(filePath).toLowerCase()
-  const types: Record<string, string> = {
-    '.html': 'text/html; charset=utf-8',
-    '.js': 'text/javascript; charset=utf-8',
-    '.css': 'text/css; charset=utf-8',
-    '.svg': 'image/svg+xml',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.webp': 'image/webp',
-    '.json': 'application/json; charset=utf-8',
-    '.ico': 'image/x-icon',
-    '.woff': 'font/woff',
-    '.woff2': 'font/woff2',
-    '.map': 'application/json',
-  }
-  return types[ext] ?? 'application/octet-stream'
+  return mediaContentType(filePath)
 }
 
 function resolveDownloadPageRoot(): string {
@@ -315,7 +317,7 @@ export async function startPhotoServer(photosDir: string): Promise<string> {
           res.end('Forbidden')
           return
         }
-        await sendFile(res, filePath)
+        await sendMediaFile(req, res, filePath)
         return
       }
 
@@ -339,7 +341,7 @@ export async function startPhotoServer(photosDir: string): Promise<string> {
           res.end('Forbidden')
           return
         }
-        await sendFile(res, filePath)
+        await sendMediaFile(req, res, filePath)
         return
       }
 

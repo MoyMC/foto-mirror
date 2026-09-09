@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   shuffleSlideshow,
+  slideshowMediaKindFromPath,
   type SlideshowConfig,
   type SlideshowImage,
 } from '../lib/slideshow'
@@ -52,6 +53,7 @@ export function useSlideshowImages({
         filePath,
         url: await toUrl(filePath),
         source: 'memory' as const,
+        kind: slideshowMediaKindFromPath(filePath),
       })),
     )
 
@@ -60,6 +62,7 @@ export function useSlideshowImages({
         filePath,
         url: await toUrl(filePath),
         source: 'event' as const,
+        kind: slideshowMediaKindFromPath(filePath),
       })),
     )
 

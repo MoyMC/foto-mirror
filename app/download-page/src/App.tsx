@@ -349,6 +349,16 @@ function DownloadIcon() {
   )
 }
 
+const INSTAGRAM_PROFILE_URL = 'https://www.instagram.com/garysfesta/'
+
+function InstagramIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0 1.441c-3.151 0-3.523.013-4.764.07-2.64.121-3.876 1.36-3.997 3.997-.057 1.24-.07 1.611-.07 4.764s.013 3.524.07 4.764c.121 2.636 1.36 3.875 3.997 3.997 1.241.057 1.612.07 4.764.07s3.524-.013 4.764-.07c2.635-.122 3.876-1.36 3.997-3.997.057-1.24.07-1.611.07-4.764s-.013-3.525-.07-4.764c-.121-2.636-1.36-3.875-3.997-3.997-1.241-.057-1.613-.07-4.764-.07zm0 3.495a5.236 5.236 0 1 1 0 10.472 5.236 5.236 0 0 1 0-10.472zm0 8.64a3.404 3.404 0 1 0 0-6.808 3.404 3.404 0 0 0 0 6.808zm6.678-8.869a1.224 1.224 0 1 1-2.448 0 1.224 1.224 0 0 1 2.448 0z" />
+    </svg>
+  )
+}
+
 function triggerDownload(filename: string) {
   const a = document.createElement('a')
   a.href = photoUrlFor(filename)
@@ -626,6 +636,15 @@ export default function App() {
           decoding="async"
         />
         <p className="tagline">{isStrip ? 'Tu tira del evento' : 'Tu foto del evento'}</p>
+        <a
+          className="ig-btn ig-btn--header"
+          href={INSTAGRAM_PROFILE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <InstagramIcon />
+          Síguenos en Instagram
+        </a>
         {state === 'ready' && (
           <div className="page-tabs" role="tablist" aria-label="Acciones">
             <button
@@ -719,7 +738,18 @@ export default function App() {
         )}
       </main>
 
-      <footer className="footer">Gracias por visitarnos</footer>
+      <footer className="footer">
+        <a
+          className="ig-btn"
+          href={INSTAGRAM_PROFILE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <InstagramIcon />
+          Síguenos en Instagram
+        </a>
+        <p className="footer__thanks">Gracias por visitarnos</p>
+      </footer>
     </div>
   )
 }

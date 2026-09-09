@@ -18,7 +18,7 @@ import {
   startEventsServer,
   stopEventsServer,
 } from './eventsServer'
-import { listImageFilesInDir } from './slideshowBridge'
+import { listImageFilesInDir, listMediaFilesInDir } from './slideshowBridge'
 import { captureTethered, disconnectTether, getTetherStatus } from './tetherBridge'
 import {
   closeEventRegistry,
@@ -105,7 +105,7 @@ ipcMain.handle('select-photos-dir', async () => {
 
 ipcMain.handle('select-slideshow-dir', async () => {
   const result = await dialog.showOpenDialog({
-    title: 'Carpeta de fotos para pantalla',
+    title: 'Carpeta de recuerdos (fotos y videos)',
     properties: ['openDirectory', 'createDirectory'],
   })
   if (result.canceled || result.filePaths.length === 0) return null
@@ -114,7 +114,7 @@ ipcMain.handle('select-slideshow-dir', async () => {
 
 ipcMain.handle('list-slideshow-images', async (_event, dir: string) => {
   if (!dir || typeof dir !== 'string') return []
-  return listImageFilesInDir(dir)
+  return listMediaFilesInDir(dir)
 })
 
 ipcMain.handle('list-event-slideshow-images', async (_event, photosDir: string) => {
@@ -166,6 +166,53 @@ ipcMain.handle('get-simulate-printer', () => ({
   id: SIMULATE_PRINTER_ID,
   label: SIMULATE_PRINTER_LABEL,
 }))
+
+ipcMain.handle('select-overlay-png', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Elegir PNG del evento',
+    properties: ['openFile'],
+    filters: [{ name: 'PNG', extensions: ['png'] }],
+  })
+  if (result.canceled || !result.filePaths[0]) return null
+  return result.filePaths[0]
+})
+
+ipcMain.handle('install-overlay-png', async (_event, photosDir: string, sourcePath: string) => {
+  if (!photosDir || !sourcePath) throw new Error('Falta carpeta o archivo PNG')
+  const destDir = path.join(photosDir, '.fotomirror')
+  await fs.mkdir(destDir, { recursive: true })
+  const dest = path.join(destDir, 'overlay.png')
+  await fs.copyFile(sourcePath, dest)
+  return dest
+})
+
+ipcMain.handle('clear-overlay-png', async (_event, photosDir: string) => {
+  if (!photosDir) return
+  const dest = path.join(photosDir, '.fotomirror', 'overlay.png')
+  await fs.unlink(dest).catch(() => undefined)
+})
+
+ipcMain.handle('get-overlay-png-path', async (_event, photosDir: string) => {
+  if (!photosDir) return null
+  const dest = path.join(photosDir, '.fotomirror', 'overlay.png')
+  try {
+    await fs.access(dest)
+    return dest
+  } catch {
+    return null
+  }
+})
+
+ipcMain.handle('get-overlay-png-data-url', async (_event, photosDir: string) => {
+  if (!photosDir) return null
+  const dest = path.join(photosDir, '.fotomirror', 'overlay.png')
+  try {
+    const buf = await fs.readFile(dest)
+    return `data:image/png;base64,${buf.toString('base64')}`
+  } catch {
+    return null
+  }
+})
 
 ipcMain.handle('get-download-base-url', () => getDownloadBaseUrl())
 
@@ -223,6 +270,8 @@ ipcMain.handle(
         themeId?: string
         previewRotation?: number
         needsOrientationPass?: boolean
+        overlayMode?: 'none' | 'text' | 'png'
+        overlayScale?: number
       }
     },
   ) => {
@@ -266,6 +315,8 @@ ipcMain.handle(
           themeId: input.printMeta?.themeId ?? input.themeId ?? null,
           previewRotation: input.printMeta?.previewRotation ?? null,
           needsOrientationPass: input.printMeta?.needsOrientationPass ?? false,
+          overlayMode: input.printMeta?.overlayMode ?? null,
+          overlayScale: input.printMeta?.overlayScale ?? null,
         },
       })
     }

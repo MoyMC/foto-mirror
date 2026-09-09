@@ -21,6 +21,7 @@ import {
   DEFAULT_SLIDESHOW_IDLE_SECONDS,
   normalizeSlideshowIdleSeconds,
 } from './slideshow'
+import { clampOverlayScale, normalizeOverlayMode } from './overlay'
 
 const SESSION_KEY = 'espejo-fotos:session'
 export const CAMERA_DEVICE_KEY = 'espejo-fotos:camera-device-id'
@@ -37,8 +38,11 @@ export const SLIDESHOW_MEMORIES_DIR_KEY = 'espejo-fotos:slideshow-memories-dir'
 export const SLIDESHOW_INCLUDE_EVENT_KEY = 'espejo-fotos:slideshow-include-event'
 export const SLIDESHOW_IDLE_ENABLED_KEY = 'espejo-fotos:slideshow-idle-enabled'
 export const SLIDESHOW_IDLE_SECONDS_KEY = 'espejo-fotos:slideshow-idle-seconds'
+export const SLIDESHOW_AUDIO_KEY = 'espejo-fotos:slideshow-audio'
 export const PRINT_ENABLED_KEY = 'espejo-fotos:print-enabled'
 export const PRINTER_NAME_KEY = 'espejo-fotos:printer-name'
+export const OVERLAY_MODE_KEY = 'espejo-fotos:overlay-mode'
+export const OVERLAY_SCALE_KEY = 'espejo-fotos:overlay-scale'
 
 /** Must match electron/printConfig SIMULATE_PRINTER_ID */
 export const SIMULATE_PRINTER_ID = '__fotomirror_simulate__'
@@ -70,10 +74,13 @@ export function loadSessionConfig(): SessionConfig | null {
       eventSignY: clampSignPercent(data.eventSignY, DEFAULT_EVENT_SIGN_Y),
       eventSignFontId: normalizeSignFontId(data.eventSignFontId),
       eventSignSizeId: normalizeSignSizeId(data.eventSignSizeId),
+      overlayMode: normalizeOverlayMode(data.overlayMode),
+      overlayScale: clampOverlayScale(data.overlayScale),
       slideshowMemoriesDir: data.slideshowMemoriesDir ?? null,
       slideshowIncludeEventPhotos: Boolean(data.slideshowIncludeEventPhotos),
       slideshowIdleEnabled: data.slideshowIdleEnabled !== false,
       slideshowIdleSeconds: normalizeSlideshowIdleSeconds(data.slideshowIdleSeconds),
+      slideshowAudioEnabled: Boolean(data.slideshowAudioEnabled),
       printEnabled: Boolean(data.printEnabled),
       printerName: normalizePrinterName(data.printerName),
     }
@@ -94,6 +101,8 @@ export function saveSessionConfig(config: SessionConfig): void {
   localStorage.setItem(EVENT_SIGN_Y_KEY, String(config.eventSignY))
   localStorage.setItem(EVENT_SIGN_FONT_KEY, config.eventSignFontId)
   localStorage.setItem(EVENT_SIGN_SIZE_KEY, config.eventSignSizeId)
+  localStorage.setItem(OVERLAY_MODE_KEY, config.overlayMode)
+  localStorage.setItem(OVERLAY_SCALE_KEY, String(config.overlayScale))
   localStorage.setItem(SLIDESHOW_MEMORIES_DIR_KEY, config.slideshowMemoriesDir ?? '')
   localStorage.setItem(
     SLIDESHOW_INCLUDE_EVENT_KEY,
@@ -104,6 +113,7 @@ export function saveSessionConfig(config: SessionConfig): void {
     config.slideshowIdleEnabled ? '1' : '0',
   )
   localStorage.setItem(SLIDESHOW_IDLE_SECONDS_KEY, String(config.slideshowIdleSeconds))
+  localStorage.setItem(SLIDESHOW_AUDIO_KEY, config.slideshowAudioEnabled ? '1' : '0')
   localStorage.setItem(PRINT_ENABLED_KEY, config.printEnabled ? '1' : '0')
   localStorage.setItem(PRINTER_NAME_KEY, config.printerName)
   applyAppTheme(config.themeId)
@@ -147,6 +157,14 @@ export function loadStoredEventSignSizeId() {
   return normalizeSignSizeId(localStorage.getItem(EVENT_SIGN_SIZE_KEY))
 }
 
+export function loadStoredOverlayMode() {
+  return normalizeOverlayMode(localStorage.getItem(OVERLAY_MODE_KEY))
+}
+
+export function loadStoredOverlayScale() {
+  return clampOverlayScale(localStorage.getItem(OVERLAY_SCALE_KEY))
+}
+
 export function loadStoredSlideshowMemoriesDir(): string | null {
   const raw = localStorage.getItem(SLIDESHOW_MEMORIES_DIR_KEY)
   return raw || null
@@ -166,6 +184,10 @@ export function loadStoredSlideshowIdleSeconds() {
   return normalizeSlideshowIdleSeconds(
     localStorage.getItem(SLIDESHOW_IDLE_SECONDS_KEY) ?? DEFAULT_SLIDESHOW_IDLE_SECONDS,
   )
+}
+
+export function loadStoredSlideshowAudioEnabled(): boolean {
+  return localStorage.getItem(SLIDESHOW_AUDIO_KEY) === '1'
 }
 
 export function loadStoredPrintEnabled(): boolean {

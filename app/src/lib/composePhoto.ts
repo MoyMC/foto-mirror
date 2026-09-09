@@ -6,7 +6,14 @@ import { cropRect2x3, cropRect3x2, mapSignPercentThroughCrop } from './photoCrop
 import {
   DEFAULT_EVENT_SIGN_X,
   DEFAULT_EVENT_SIGN_Y,
+  clampSignCenter,
 } from './eventSign'
+import {
+  DEFAULT_OVERLAY_SCALE,
+  normalizeOverlayMode,
+  overlayDisplaySize,
+  type OverlayMode,
+} from './overlay'
 import {
   captureRotationFromPreview,
   mapSignPreviewToPhoto,
@@ -22,6 +29,9 @@ export interface ComposePhotoOptions {
   signY?: number
   signFontId?: EventSignFontId
   signSizeId?: EventSignSizeId
+  overlayMode?: OverlayMode
+  overlayPngUrl?: string | null
+  overlayScale?: number
   previewRotation?: PreviewRotation
   needsOrientationPass?: boolean
   jpegQuality?: number
@@ -36,7 +46,39 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   })
 }
 
-/** Compone filtro, orientación tether y letrero sobre un JPEG/data URL. */
+function drawPngOverlay(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  width: number,
+  height: number,
+  xPercent: number,
+  yPercent: number,
+  scale: number,
+  previewRotation: PreviewRotation,
+  usePhotoCoords: boolean,
+): void {
+  const natW = image.naturalWidth || image.width
+  const natH = image.naturalHeight || image.height
+  if (!natW || !natH) return
+  const size = overlayDisplaySize(natW, natH, width, height, scale)
+  const mapped = usePhotoCoords
+    ? { x: xPercent, y: yPercent }
+    : mapSignPreviewToPhoto(xPercent, yPercent, previewRotation)
+  const fitted = clampSignCenter(
+    mapped.x,
+    mapped.y,
+    size.width / 2,
+    size.height / 2,
+    width,
+    height,
+    Math.round(Math.min(width, height) * 0.02),
+  )
+  const cx = (width * fitted.x) / 100
+  const cy = (height * fitted.y) / 100
+  ctx.drawImage(image, cx - size.width / 2, cy - size.height / 2, size.width, size.height)
+}
+
+/** Compone filtro, orientación tether y overlay (texto o PNG) sobre un JPEG/data URL. */
 export async function composePhoto(
   basePhoto: string,
   filter: FilterPreset | null | undefined,
@@ -48,14 +90,19 @@ export async function composePhoto(
     signY,
     signFontId,
     signSizeId,
+    overlayMode = 'none',
+    overlayPngUrl = null,
+    overlayScale = DEFAULT_OVERLAY_SCALE,
     previewRotation = 90,
     needsOrientationPass = false,
     jpegQuality = 0.95,
   }: ComposePhotoOptions = {},
 ): Promise<string> {
+  const mode = normalizeOverlayMode(overlayMode)
   const needsFilter = Boolean(filter && filter.id !== 'normal')
-  const needsSign = hasEventSign(signText)
-  const needsOverlay = needsFilter || needsSign || Boolean(logoUrl)
+  const needsSign = mode === 'text' && hasEventSign(signText)
+  const needsPng = mode === 'png' && Boolean(overlayPngUrl)
+  const needsOverlay = needsFilter || needsSign || needsPng || Boolean(logoUrl)
 
   if (!needsOverlay && !needsOrientationPass) {
     return basePhoto
@@ -135,6 +182,31 @@ export async function composePhoto(
       previewRotation,
       true,
     )
+  }
+
+  if (needsPng && overlayPngUrl) {
+    try {
+      const png = await loadImage(overlayPngUrl)
+      const mapped = mapSignPreviewToPhoto(
+        signX ?? DEFAULT_EVENT_SIGN_X,
+        signY ?? DEFAULT_EVENT_SIGN_Y,
+        previewRotation,
+      )
+      const onCrop = mapSignPercentThroughCrop(mapped.x, mapped.y, width, height, fullCrop)
+      drawPngOverlay(
+        ctx,
+        png,
+        fullCrop.width,
+        fullCrop.height,
+        onCrop.x,
+        onCrop.y,
+        overlayScale,
+        previewRotation,
+        true,
+      )
+    } catch {
+      // Missing/broken PNG — keep photo without overlay.
+    }
   }
 
   if (logoUrl) {

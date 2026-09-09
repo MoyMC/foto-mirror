@@ -1,4 +1,5 @@
 import type { EventSignFontId, EventSignSizeId } from './lib/eventSign'
+import type { OverlayMode } from './lib/overlay'
 import type { SlideshowIdleSeconds } from './lib/slideshow'
 import type { AppThemeId } from './lib/themes'
 import type { PreviewRotation } from './lib/orientation'
@@ -61,10 +62,13 @@ export interface SessionConfig {
   eventSignY: number
   eventSignFontId: EventSignFontId
   eventSignSizeId: EventSignSizeId
+  overlayMode: OverlayMode
+  overlayScale: number
   slideshowMemoriesDir: string | null
   slideshowIncludeEventPhotos: boolean
   slideshowIdleEnabled: boolean
   slideshowIdleSeconds: SlideshowIdleSeconds
+  slideshowAudioEnabled: boolean
   printEnabled: boolean
   /** Windows printer queue, or simulate sentinel from main. */
   printerName: string
@@ -156,6 +160,8 @@ export interface SaveEventPhotosInput {
     themeId?: string
     previewRotation?: number
     needsOrientationPass?: boolean
+    overlayMode?: 'none' | 'text' | 'png'
+    overlayScale?: number
   }
 }
 
@@ -190,6 +196,11 @@ export interface ElectronAPI {
   getPrintSettings: () => Promise<PrintSettings>
   setPrintSettings: (settings: Partial<PrintSettings>) => Promise<PrintSettings>
   getSimulatePrinter: () => Promise<{ id: string; label: string }>
+  selectOverlayPng: () => Promise<string | null>
+  installOverlayPng: (photosDir: string, sourcePath: string) => Promise<string>
+  clearOverlayPng: (photosDir: string) => Promise<void>
+  getOverlayPngPath: (photosDir: string) => Promise<string | null>
+  getOverlayPngDataUrl: (photosDir: string) => Promise<string | null>
   openExternal: (url: string) => Promise<void>
   quitApp: () => Promise<void>
 }

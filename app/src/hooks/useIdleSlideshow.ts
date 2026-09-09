@@ -6,7 +6,7 @@ import {
   type SlideshowImage,
 } from '../lib/slideshow'
 
-const SLIDE_MS = 4500
+const IMAGE_SLIDE_MS = 4500
 
 interface UseIdleSlideshowOptions {
   active: boolean
@@ -27,7 +27,7 @@ export function useIdleSlideshow({
   const [slideIndex, setSlideIndex] = useState(0)
   const [fade, setFade] = useState(true)
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const slideTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const imageTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const displayMode = slideshowDisplayMode(config, hasMemoryImages)
   const canRun = active && slideshowIsConfigured(config) && images.length > 0 && displayMode
@@ -37,9 +37,9 @@ export function useIdleSlideshow({
       clearTimeout(idleTimer.current)
       idleTimer.current = null
     }
-    if (slideTimer.current) {
-      clearInterval(slideTimer.current)
-      slideTimer.current = null
+    if (imageTimer.current) {
+      clearTimeout(imageTimer.current)
+      imageTimer.current = null
     }
   }, [])
 
@@ -63,6 +63,15 @@ export function useIdleSlideshow({
     }, config.idleSeconds * 1000)
   }, [canRun, clearTimers, config.idleSeconds])
 
+  const advanceSlide = useCallback(() => {
+    if (images.length <= 1) return
+    setFade(false)
+    window.setTimeout(() => {
+      setSlideIndex((i) => (i + 1) % images.length)
+      setFade(true)
+    }, 280)
+  }, [images.length])
+
   useEffect(() => {
     if (!canRun) {
       clearTimers()
@@ -73,30 +82,38 @@ export function useIdleSlideshow({
     return clearTimers
   }, [bumpActivity, canRun, clearTimers, images.length])
 
-  useEffect(() => {
-    if (!slideshowVisible || images.length <= 1) return
+  const current = images.length > 0 ? images[slideIndex % images.length] : null
 
-    slideTimer.current = setInterval(() => {
-      setFade(false)
-      window.setTimeout(() => {
-        setSlideIndex((i) => (i + 1) % images.length)
-        setFade(true)
-      }, 280)
-    }, SLIDE_MS)
+  // Photos advance on a timer; videos advance via onEnded from IdleSlideshow.
+  useEffect(() => {
+    if (!slideshowVisible || !current || current.kind === 'video') {
+      if (imageTimer.current) {
+        clearTimeout(imageTimer.current)
+        imageTimer.current = null
+      }
+      return
+    }
+
+    imageTimer.current = setTimeout(() => {
+      advanceSlide()
+    }, IMAGE_SLIDE_MS)
 
     return () => {
-      if (slideTimer.current) clearInterval(slideTimer.current)
+      if (imageTimer.current) {
+        clearTimeout(imageTimer.current)
+        imageTimer.current = null
+      }
     }
-  }, [slideshowVisible, images.length])
-
-  const current = images.length > 0 ? images[slideIndex % images.length] : null
+  }, [slideshowVisible, current, advanceSlide, slideIndex])
 
   return {
     slideshowVisible: Boolean(slideshowVisible && canRun),
     displayMode: displayMode ?? 'overlay',
     current,
     fade,
+    audioEnabled: config.audioEnabled,
     bumpActivity,
     dismiss,
+    advanceSlide,
   }
 }
